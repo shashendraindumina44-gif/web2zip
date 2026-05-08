@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Web2Zip | Cyber Protocol</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            background-color: #0d0d12;
+            background-image: 
+                linear-gradient(rgba(0, 255, 136, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0, 255, 136, 0.03) 1px, transparent 1px);
+            background-size: 30px 30px;
+            font-family: 'JetBrains Mono', monospace;
+            color: #00ff88;
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow-y: auto; /* Content wadi unoth scroll wenna */
+            padding: 20px;
+        }
+
+        .anime-border {
+            border: 2px solid #00ff88;
+            box-shadow: 5px 5px 0px #7000ff;
+            clip-path: polygon(0% 0%, 100% 0%, 100% 95%, 95% 100%, 0% 100%);
+        }
+
+        .tech-input {
+            background: rgba(0, 0, 0, 0.7);
+            border: 1px solid #7000ff;
+            color: #fff;
+            outline: none;
+            transition: 0.3s;
+        }
+
+        .tech-input:focus {
+            border-color: #00ff88;
+            box-shadow: 0 0 10px rgba(0, 255, 136, 0.2);
+        }
+
+        .btn-execute {
+            background: #00ff88;
+            color: #000;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            transition: 0.2s;
+            cursor: pointer;
+        }
+
+        .btn-execute:hover {
+            background: #7000ff;
+            color: #fff;
+            box-shadow: 0 0 20px #7000ff;
+        }
+
+        .glitch-text {
+            text-transform: uppercase;
+            position: relative;
+            display: inline-block;
+        }
+
+        .status-box {
+            border-left: 3px solid #7000ff;
+            background: rgba(112, 0, 255, 0.05);
+        }
+
+        .api-panel {
+            background: rgba(0, 0, 0, 0.4);
+            border: 1px dashed #7000ff;
+            font-size: 10px;
+        }
+        
+        .code-snippet {
+            color: #7000ff;
+            word-break: break-all;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="anime-border bg-[#16161e] w-full max-w-lg p-8 relative">
+        <div class="absolute top-2 right-4 text-[10px] opacity-50">VER 2.0.4 // SYSTEM_READY</div>
+        
+        <div class="mb-8">
+            <h1 class="text-4xl font-black glitch-text tracking-tighter">
+                SCRAPE <span class="text-[#7000ff]">PROTOCOL</span>
+            </h1>
+            <div class="h-1 w-20 bg-[#7000ff] mt-1"></div>
+        </div>
+
+        <div class="space-y-6">
+            <div>
+                <p class="text-[10px] mb-2 text-purple-400 font-bold tracking-widest">INPUT_TARGET_URL</p>
+                <input type="text" id="urlInput" 
+                    class="tech-input w-full p-4 rounded-sm font-bold italic"
+                    placeholder="HTTP://SOURCE_LINK.COM" value="https://">
+            </div>
+
+            <button onclick="runScraper()" id="runBtn" class="btn-execute w-full p-5 italic">
+                Execute Extraction
+            </button>
+        </div>
+
+        <div class="mt-6 api-panel p-3">
+            <p class="text-[9px] text-[#00ff88] mb-1 font-bold uppercase tracking-widest">// Developer API Access</p>
+            <div class="flex items-center gap-2">
+                <span class="bg-[#7000ff] text-white px-1 text-[8px]">GET</span>
+                <code class="code-snippet" id="apiLink">loading_endpoint...</code>
+            </div>
+            <p class="text-[8px] text-gray-500 mt-1 italic">* Use URL parameter to fetch direct ZIP assets.</p>
+        </div>
+
+        <div id="sysLog" class="mt-8 status-box p-4 hidden">
+            <div class="text-[11px] space-y-1">
+                <p>> Initializing Scraper...</p>
+                <p>> Target URL Authenticated...</p>
+                <p class="text-white">> Bypassing Web-Shields...</p>
+                <p class="animate-pulse">> Downloading Assets (Time Limit: 10s)...</p>
+            </div>
+        </div>
+
+        <div class="mt-10 pt-6 border-t border-gray-800 flex justify-between items-end">
+            <div>
+                <p class="text-[9px] text-gray-500 uppercase">Tech Authority</p>
+                <p class="text-xs font-bold text-white tracking-widest">LORD INDUMINA</p>
+            </div>
+            <div class="text-[10px] bg-[#7000ff] text-white px-2 py-1">SECURE ACCESS</div>
+        </div>
+    </div>
+
+    <script>
+        // Endpoint eka dynamic widiyata set karanawa
+        document.getElementById('apiLink').innerText = window.location.origin + '/api/convert?url={TARGET_URL}';
+
+        function runScraper() {
+            const url = document.getElementById('urlInput').value;
+            if (!url || url === 'https://') return alert('ERROR: URL_REQUIRED');
+
+            document.getElementById('sysLog').classList.remove('hidden');
+            const btn = document.getElementById('runBtn');
+            btn.innerText = "EXTRACTING...";
+            btn.style.opacity = "0.5";
+
+            // Download request
+            window.location.href = `/api/convert?url=${encodeURIComponent(url)}`;
+            
+            setTimeout(() => {
+                btn.innerText = "Execute Extraction";
+                btn.style.opacity = "1";
+            }, 10000);
+        }
+    </script>
+</body>
+</html>
