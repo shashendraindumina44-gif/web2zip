@@ -5,10 +5,15 @@ const JSZip = require('jszip');
 const path = require('path');
 
 const app = express();
-// Vercel wala PORT eka auto detect wenna ona
 const PORT = process.env.PORT || 3000;
 
-app.use(express.static('public'));
+// 1. Static files serve karanna (Meka aniwaryayi)
+app.use(express.static(path.join(__dirname, 'public')));
+
+// 2. Home route ekata HTML eka kelinma yawanna
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
 
 app.get('/api/convert', async (req, res) => {
     let targetUrl = req.query.url;
@@ -21,7 +26,7 @@ app.get('/api/convert', async (req, res) => {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36',
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8'
             },
-            timeout: 10000 // Vercel timeout nisa limit kala
+            timeout: 10000 
         });
 
         const $ = cheerio.load(response.data);
@@ -64,7 +69,7 @@ app.get('/api/convert', async (req, res) => {
             try {
                 const assetRes = await axios.get(asset.url, { 
                     responseType: 'arraybuffer', 
-                    timeout: 8000, // Speed up for Vercel
+                    timeout: 8000, 
                     headers: { 'User-Agent': 'Mozilla/5.0' }
                 });
                 zip.file(`${asset.type}/${asset.fileName}`, assetRes.data);
@@ -85,7 +90,6 @@ app.get('/api/convert', async (req, res) => {
     }
 });
 
-// Me line eka Vercel ekata godak wadagath
 module.exports = app;
 
 if (process.env.NODE_ENV !== 'production') {
