@@ -20,6 +20,8 @@ try {
     require('puppeteer-extra-plugin-stealth/evasions/navigator.plugins');
     require('puppeteer-extra-plugin-stealth/evasions/navigator.webdriver');
     require('puppeteer-extra-plugin-stealth/evasions/sourceurl');
+    require('puppeteer-extra-plugin-stealth/evasions/defaultArgs');
+    require('puppeteer-extra-plugin-stealth/evasions/stack.trace');
     require('puppeteer-extra-plugin-stealth/evasions/user-agent-override');
     require('puppeteer-extra-plugin-stealth/evasions/webgl.vendor');
     require('puppeteer-extra-plugin-stealth/evasions/window.outerdimensions');
