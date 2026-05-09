@@ -59,12 +59,6 @@
             box-shadow: 0 0 20px #7000ff;
         }
 
-        .glitch-text {
-            text-transform: uppercase;
-            position: relative;
-            display: inline-block;
-        }
-
         .status-box {
             border-left: 3px solid #7000ff;
             background: rgba(112, 0, 255, 0.05);
@@ -74,7 +68,7 @@
 <body>
 
     <div class="anime-border bg-[#16161e] w-full max-w-lg p-8 relative">
-        <div class="absolute top-2 right-4 text-[10px] opacity-50">VER 3.0.1 // RECOVERY_CORE</div>
+        <div class="absolute top-2 right-4 text-[10px] opacity-50">VER 3.0.2 // STEALTH_HYBRID</div>
         
         <div class="mb-8">
             <h1 class="text-4xl font-black glitch-text tracking-tighter">
@@ -91,11 +85,10 @@
                     placeholder="HTTP://SOURCE_LINK.COM" value="https://">
             </div>
 
-            <!-- Advanced Mode Toggle -->
             <div class="flex items-center justify-between p-4 bg-black/40 border border-purple-900/30 rounded">
                 <div>
-                    <p class="text-[11px] font-bold text-white">ADVANCED_USER_RENDERING</p>
-                    <p class="text-[9px] text-gray-500 italic">Render React/Cloudflare sites locally (No Vercel Crashes).</p>
+                    <p class="text-[11px] font-bold text-white">ADVANCED_STEALTH_MODE</p>
+                    <p class="text-[9px] text-gray-500 italic">Uses Dual-Proxy + User Rendering to bypass 403 blocks.</p>
                 </div>
                 <label class="relative inline-flex items-center cursor-pointer">
                     <input type="checkbox" id="advancedMode" class="sr-only peer">
@@ -123,7 +116,6 @@
         </div>
     </div>
 
-    <!-- Hidden Rendering Chamber -->
     <iframe id="renderFrame" style="display:none;"></iframe>
 
     <script>
@@ -163,30 +155,40 @@
             }
         }
 
+        async function smartFetch(url) {
+            // Priority 1: Our Stealth Proxy
+            try {
+                const res = await fetch(`/api/proxy?url=${encodeURIComponent(url)}`);
+                if (res.status === 200) return res;
+            } catch (e) {}
+
+            // Priority 2: Public CORS Proxy (Fallback for 403)
+            log("Server Blocked. Engaging Secondary Bypass...", "#7000ff");
+            const publicProxy = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+            return await fetch(publicProxy);
+        }
+
         async function executeUserSideExtraction(targetUrl) {
             try {
-                log("Engaging User-Side Rendering Engine...", "#7000ff");
+                log("Engaging Stealth Rendering Engine...", "#7000ff");
                 const zip = new JSZip();
                 
-                log("Fetching Raw Code via Proxy...");
-                const proxyUrl = `/api/proxy?url=${encodeURIComponent(targetUrl)}`;
-                const response = await fetch(proxyUrl);
-                if (!response.ok) throw new Error(`Proxy failed: ${response.status}`);
+                log("Bypassing Web Shields...");
+                const response = await smartFetch(targetUrl);
+                if (!response.ok) throw new Error(`Access Denied (403/404)`);
                 const html = await response.text();
 
-                log("Building Render Chamber (Executing JS)...", "#7000ff");
+                log("Injecting Render Chamber...");
                 const frame = document.getElementById('renderFrame');
                 const frameDoc = frame.contentDocument || frame.contentWindow.document;
-                
                 frameDoc.open();
                 frameDoc.write(html);
                 frameDoc.close();
 
-                log("Waiting for Hydration (8s)...");
+                log("Executing Site JS (8s Wait)...");
                 await new Promise(r => setTimeout(r, 8000));
 
-                log("Capturing Rendered DOM...");
-                // Use frameDoc directly to ensure we get the fully hydrated tree
+                log("Capturing Hydrated State...");
                 const renderedDoc = frameDoc.cloneNode(true);
                 const assets = [];
                 
@@ -196,7 +198,7 @@
                         if (src && !src.startsWith('data:') && !src.startsWith('#')) {
                             try {
                                 const absUrl = new URL(src, targetUrl).href;
-                                const fileName = `file-${i}-${Math.random().toString(36).substring(7)}.${folder}`;
+                                const fileName = `file-${i}.${folder}`;
                                 assets.push({ url: absUrl, path: `${folder}/${fileName}` });
                                 el.setAttribute(attr, `./${folder}/${fileName}`);
                             } catch (e) {}
@@ -208,12 +210,12 @@
                 process('script[src]', 'src', 'js');
                 process('img', 'src', 'img');
 
-                log(`Extracting Asset Map (Total: ${assets.length})...`);
                 zip.file("index.html", renderedDoc.documentElement.outerHTML);
 
+                log(`Downloading Assets (${assets.length})...`);
                 for (const asset of assets) {
                     try {
-                        const res = await fetch(`/api/proxy?url=${encodeURIComponent(asset.url)}`);
+                        const res = await smartFetch(asset.url);
                         if (res.ok) {
                             const blob = await res.blob();
                             zip.file(asset.path, blob);
@@ -221,18 +223,18 @@
                     } catch (e) {}
                 }
 
-                log("Generating Final ZIP Package...", "#00ff88");
+                log("Packaging ZIP...");
                 const content = await zip.generateAsync({ type: "blob" });
-                const zipName = new URL(targetUrl).hostname.replace(/\./g, '_') + "_advanced.zip";
+                const zipName = new URL(targetUrl).hostname.replace(/\./g, '_') + "_stealth.zip";
                 
                 const link = document.createElement('a');
                 link.href = URL.createObjectURL(content);
                 link.download = zipName;
                 link.click();
 
-                log("EXTRACTION COMPLETE!", "#00ff88");
+                log("COMPLETE!", "#00ff88");
             } catch (err) {
-                log(`CRITICAL ERROR: ${err.message}`, "red");
+                log(`FAILED: ${err.message}`, "red");
             }
         }
     </script>
