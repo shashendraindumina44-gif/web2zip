@@ -20,7 +20,7 @@ async function launchBrowser() {
     return await playwright.launch({
         args: [...chromium.args, '--no-sandbox', '--disable-setuid-sandbox', '--disable-blink-features=AutomationControlled'],
         executablePath: await chromium.executablePath(),
-        headless: chromium.headless,
+        headless: true, // Use boolean for Playwright
     });
 }
 
