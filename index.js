@@ -31,16 +31,10 @@ app.get('/api/convert', async (req, res) => {
         const $ = cheerio.load(response.data);
         const zip = new JSZip();
         const urlObj = new URL(targetUrl);
-        
-        // --- ZIP NAME CONFIG (CLEAN) ---
-        // "_extracted" kalla ain kara. Dan enne (domain_name.zip) widiyata.
         const zipName = urlObj.hostname.replace('www.', '').replace(/\./g, '_') + '.zip';
-        
         const assets = [];
 
-        // 🛡️ SECURITY & CLEANUP
         $('base').remove(); 
-        $('script[src*="google-analytics"]').remove(); 
 
         const processAsset = (tag, attr, typeFolder) => {
             $(tag).each((i, el) => {
@@ -52,51 +46,48 @@ app.get('/api/convert', async (req, res) => {
                         let fileName = path.basename(cleanPath);
                         
                         if (!fileName || !fileName.includes('.')) {
-                            const extensions = { js: '.js', css: '.css', img: '.png', icon: '.ico', media: '.mp4' };
+                            const extensions = { js: '.js', css: '.css', img: '.png', audio: '.mp3', video: '.mp4', icon: '.ico' };
                             fileName = `${typeFolder}-${i}${extensions[typeFolder] || '.file'}`;
                         } else {
                             fileName = fileName.replace(/[^a-zA-Z0-9.\-_]/g, '_');
                         }
 
                         assets.push({ type: typeFolder, url: assetUrl, fileName });
-                        
-                        // HTML eka athule relative path eka hadima
                         $(el).attr(attr, `./${typeFolder}/${fileName}`); 
                     } catch (e) {}
                 }
             });
         };
 
-        // Assets extraction mapping
         processAsset('link[rel="stylesheet"]', 'href', 'css');
         processAsset('script[src]', 'src', 'js');
         processAsset('img', 'src', 'img');
-        processAsset('link[rel*="icon"]', 'href', 'icon');
-        processAsset('audio source', 'src', 'audio');
-        processAsset('video source', 'src', 'video');
+        processAsset('link[rel="icon"]', 'href', 'icon');
+        processAsset('link[rel="shortcut icon"]', 'href', 'icon');
+        processAsset('link[rel="apple-touch-icon"]', 'href', 'icon');
+        processAsset('audio', 'src', 'audio');
+        processAsset('source', 'src', 'media');
+        processAsset('video', 'src', 'video');
 
-        // Save updated HTML to ZIP
         zip.file("index.html", $.html());
 
-        // ⚡ BATCH DOWNLOADER
         const batchSize = 5; 
         for (let i = 0; i < assets.length; i += batchSize) {
             const batch = assets.slice(i, i + batchSize);
-            await Promise.all(batch.map(async (asset) => {
+            const downloadTasks = batch.map(async (asset) => {
                 try {
                     const assetRes = await axios.get(asset.url, { 
                         responseType: 'arraybuffer', 
                         timeout: 5000, 
                         headers: { 
-                            'User-Agent': 'Mozilla/5.0',
+                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
                             'Referer': targetUrl
                         }
                     });
                     zip.file(`${asset.type}/${asset.fileName}`, assetRes.data);
-                } catch (err) {
-                    // Fail wena ewa skip wenawa
-                }
-            }));
+                } catch (err) {}
+            });
+            await Promise.all(downloadTasks);
         }
 
         const content = await zip.generateAsync({ 
@@ -111,7 +102,7 @@ app.get('/api/convert', async (req, res) => {
 
     } catch (error) {
         res.status(500).json({ 
-            error: 'Extraction failed.', 
+            error: 'Extraction failed or Website is protected.', 
             details: error.message 
         });
     }
@@ -120,5 +111,5 @@ app.get('/api/convert', async (req, res) => {
 module.exports = app;
 
 if (process.env.NODE_ENV !== 'production') {
-    app.listen(PORT, () => console.log(`[Lord Indumina Protocol] Online on Port: ${PORT}`));
+    app.listen(PORT, () => console.log(`[Cyber Protocol] Server running on port ${PORT}`));
 }
