@@ -19,23 +19,28 @@ app.get('/api/convert', async (req, res) => {
     if (!targetUrl.startsWith('http')) targetUrl = 'https://' + targetUrl;
 
     try {
-      
         const response = await axios.get(targetUrl, { 
             headers: { 
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36',
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
                 'Accept-Language': 'en-US,en;q=0.9'
             },
-            timeout: 8000 
+            timeout: 10000 
         });
 
         const $ = cheerio.load(response.data);
         const zip = new JSZip();
         const urlObj = new URL(targetUrl);
-        const zipName = urlObj.hostname.replace(/\./g, '_') + 'zip';
+        
+        // --- ZIP NAME CONFIG (CLEAN) ---
+        // "_extracted" kalla ain kara. Dan enne (domain_name.zip) widiyata.
+        const zipName = urlObj.hostname.replace('www.', '').replace(/\./g, '_') + '.zip';
+        
         const assets = [];
 
+        // 🛡️ SECURITY & CLEANUP
         $('base').remove(); 
+        $('script[src*="google-analytics"]').remove(); 
 
         const processAsset = (tag, attr, typeFolder) => {
             $(tag).each((i, el) => {
@@ -43,68 +48,61 @@ app.get('/api/convert', async (req, res) => {
                 if (src && !src.startsWith('data:') && !src.startsWith('#') && !src.startsWith('mailto:')) {
                     try {
                         const assetUrl = new URL(src, targetUrl).href;
-             
                         let cleanPath = new URL(assetUrl).pathname;
                         let fileName = path.basename(cleanPath);
                         
                         if (!fileName || !fileName.includes('.')) {
-                            const extensions = { js: '.js', css: '.css', img: '.png', audio: '.mp3', video: '.mp4', icon: '.ico' };
+                            const extensions = { js: '.js', css: '.css', img: '.png', icon: '.ico', media: '.mp4' };
                             fileName = `${typeFolder}-${i}${extensions[typeFolder] || '.file'}`;
                         } else {
-                           
                             fileName = fileName.replace(/[^a-zA-Z0-9.\-_]/g, '_');
                         }
 
                         assets.push({ type: typeFolder, url: assetUrl, fileName });
                         
-                       
+                        // HTML eka athule relative path eka hadima
                         $(el).attr(attr, `./${typeFolder}/${fileName}`); 
-                    } catch (e) {
-                        
-                    }
+                    } catch (e) {}
                 }
             });
         };
 
-        // Assets map kirima
+        // Assets extraction mapping
         processAsset('link[rel="stylesheet"]', 'href', 'css');
         processAsset('script[src]', 'src', 'js');
         processAsset('img', 'src', 'img');
-        processAsset('link[rel="icon"]', 'href', 'icon');
-        processAsset('link[rel="shortcut icon"]', 'href', 'icon');
-        processAsset('link[rel="apple-touch-icon"]', 'href', 'icon');
-        processAsset('audio', 'src', 'audio');
-        processAsset('source', 'src', 'media');
-        processAsset('video', 'src', 'video');
+        processAsset('link[rel*="icon"]', 'href', 'icon');
+        processAsset('audio source', 'src', 'audio');
+        processAsset('video source', 'src', 'video');
 
+        // Save updated HTML to ZIP
         zip.file("index.html", $.html());
 
-     
-        const batchSize = 5; // 
+        // ⚡ BATCH DOWNLOADER
+        const batchSize = 5; 
         for (let i = 0; i < assets.length; i += batchSize) {
             const batch = assets.slice(i, i + batchSize);
-            const downloadTasks = batch.map(async (asset) => {
+            await Promise.all(batch.map(async (asset) => {
                 try {
                     const assetRes = await axios.get(asset.url, { 
                         responseType: 'arraybuffer', 
-                        timeout: 4000, 
+                        timeout: 5000, 
                         headers: { 
-                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                            'User-Agent': 'Mozilla/5.0',
                             'Referer': targetUrl
                         }
                     });
                     zip.file(`${asset.type}/${asset.fileName}`, assetRes.data);
                 } catch (err) {
-                    console.log(`[SKIPPED] ${asset.url}`);
+                    // Fail wena ewa skip wenawa
                 }
-            });
-            await Promise.all(downloadTasks);
+            }));
         }
 
-     
         const content = await zip.generateAsync({ 
             type: "nodebuffer",
-            compression: "STORE" 
+            compression: "DEFLATE",
+            compressionOptions: { level: 6 }
         });
         
         res.setHeader('Content-Type', 'application/zip');
@@ -112,9 +110,8 @@ app.get('/api/convert', async (req, res) => {
         res.send(content);
 
     } catch (error) {
-        console.error(error);
         res.status(500).json({ 
-            error: 'Extraction failed or Website is protected.', 
+            error: 'Extraction failed.', 
             details: error.message 
         });
     }
@@ -123,5 +120,5 @@ app.get('/api/convert', async (req, res) => {
 module.exports = app;
 
 if (process.env.NODE_ENV !== 'production') {
-    app.listen(PORT, () => console.log(`[Cyber Protocol] Server running on port ${PORT}`));
+    app.listen(PORT, () => console.log(`[Lord Indumina Protocol] Online on Port: ${PORT}`));
 }
