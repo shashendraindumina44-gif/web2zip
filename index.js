@@ -7,10 +7,8 @@ const path = require('path');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// 1. Static files serve karanna (Meka aniwaryayi)
 app.use(express.static(path.join(__dirname, 'public')));
 
-// 2. Home route ekata HTML eka kelinma yawanna
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
@@ -23,8 +21,7 @@ app.get('/api/convert', async (req, res) => {
     try {
         const response = await axios.get(targetUrl, { 
             headers: { 
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8'
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36'
             },
             timeout: 10000 
         });
@@ -40,16 +37,18 @@ app.get('/api/convert', async (req, res) => {
                 let src = $(el).attr(attr);
                 if (src && !src.startsWith('data:') && !src.startsWith('#')) {
                     try {
+                        // Absolute URL eka hadaganna widiya update kala
                         const assetUrl = new URL(src, targetUrl).href;
                         let fileName = path.basename(new URL(assetUrl).pathname);
                         
                         if (!fileName || !fileName.includes('.')) {
-                            const extensions = { js: '.js', css: '.css', img: '.jpg', audio: '.mp3', video: '.mp4' };
+                            const extensions = { js: '.js', css: '.css', img: '.jpg' };
                             fileName = `${typeFolder}-${i}${extensions[typeFolder] || '.file'}`;
                         }
 
+                        // Path eka "./css/style.css" wage wenas kala
                         assets.push({ type: typeFolder, url: assetUrl, fileName });
-                        $(el).attr(attr, `${typeFolder}/${fileName}`); 
+                        $(el).attr(attr, `./${typeFolder}/${fileName}`); 
                     } catch (e) {}
                 }
             });
@@ -58,23 +57,20 @@ app.get('/api/convert', async (req, res) => {
         processAsset('link[rel="stylesheet"]', 'href', 'css');
         processAsset('script[src]', 'src', 'js');
         processAsset('img[src]', 'src', 'img');
-        processAsset('audio', 'src', 'audio');
-        processAsset('audio source', 'src', 'audio');
-        processAsset('video', 'src', 'video');
-        processAsset('video source', 'src', 'video');
 
         zip.file("index.html", $.html());
 
+        // CSS/JS/IMG download karana ekata limit ekak damma timeout wena nisa
         const downloadTasks = assets.map(async (asset) => {
             try {
                 const assetRes = await axios.get(asset.url, { 
                     responseType: 'arraybuffer', 
-                    timeout: 8000, 
+                    timeout: 5000, 
                     headers: { 'User-Agent': 'Mozilla/5.0' }
                 });
                 zip.file(`${asset.type}/${asset.fileName}`, assetRes.data);
             } catch (err) {
-                console.log(`Skipped: ${asset.url}`);
+                console.log(`Failed to download: ${asset.url}`);
             }
         });
 
@@ -91,7 +87,6 @@ app.get('/api/convert', async (req, res) => {
 });
 
 module.exports = app;
-
 if (process.env.NODE_ENV !== 'production') {
     app.listen(PORT, () => console.log(`Server: http://localhost:${PORT}`));
 }
