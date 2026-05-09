@@ -7,6 +7,24 @@ const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 const chromium = require('@sparticuz/chromium');
 
+// Vercel Bundler Fix: Explicitly require stealth evasions to ensure they are included in the deployment
+try {
+    require('puppeteer-extra-plugin-stealth/evasions/chrome.app');
+    require('puppeteer-extra-plugin-stealth/evasions/chrome.csi');
+    require('puppeteer-extra-plugin-stealth/evasions/chrome.loadTimes');
+    require('puppeteer-extra-plugin-stealth/evasions/chrome.runtime');
+    require('puppeteer-extra-plugin-stealth/evasions/iframe.contentWindow');
+    require('puppeteer-extra-plugin-stealth/evasions/media.codecs');
+    require('puppeteer-extra-plugin-stealth/evasions/navigator.languages');
+    require('puppeteer-extra-plugin-stealth/evasions/navigator.permissions');
+    require('puppeteer-extra-plugin-stealth/evasions/navigator.plugins');
+    require('puppeteer-extra-plugin-stealth/evasions/navigator.webdriver');
+    require('puppeteer-extra-plugin-stealth/evasions/sourceurl');
+    require('puppeteer-extra-plugin-stealth/evasions/user-agent-override');
+    require('puppeteer-extra-plugin-stealth/evasions/webgl.vendor');
+    require('puppeteer-extra-plugin-stealth/evasions/window.outerdimensions');
+} catch (e) {}
+
 // Initialize Stealth Plugin
 puppeteer.use(StealthPlugin());
 
@@ -35,7 +53,7 @@ app.get('/api/convert', async (req, res) => {
 
     if (!targetUrl) return res.status(400).json({ error: 'URL MISSED!' });
     if (!targetUrl.startsWith('http')) targetUrl = 'https://' + targetUrl;
-// zip converter
+    // zip converter
     const zip = new JSZip();
     const urlObj = new URL(targetUrl);
     const zipName = urlObj.hostname.replace('www.', '').replace(/\./g, '_') + '.zip';
@@ -59,9 +77,9 @@ app.get('/api/convert', async (req, res) => {
             cookieString = cookies.map(c => `${c.name}=${c.value}`).join('; ');
         } else {
             //SIMPLE MODE (AXIOS)
-            const response = await axios.get(targetUrl, { 
+            const response = await axios.get(targetUrl, {
                 headers: { 'User-Agent': userAgent },
-                timeout: 15000 
+                timeout: 15000
             });
             htmlContent = response.data;
         }
@@ -69,8 +87,8 @@ app.get('/api/convert', async (req, res) => {
         const $ = cheerio.load(htmlContent);
 
         //  SECURITY & CLEANUP
-        $('base').remove(); 
-        $('script[src*="google-analytics"]').remove(); 
+        $('base').remove();
+        $('script[src*="google-analytics"]').remove();
         $('script[src*="gtm.js"]').remove();
 
         const processAsset = (tag, attr, typeFolder) => {
@@ -88,8 +106,8 @@ app.get('/api/convert', async (req, res) => {
                             fileName = fileName.replace(/[^a-zA-Z0-9.\-_]/g, '_');
                         }
                         assets.push({ type: typeFolder, url: assetUrl, fileName });
-                        $(el).attr(attr, `./${typeFolder}/${fileName}`); 
-                    } catch (e) {}
+                        $(el).attr(attr, `./${typeFolder}/${fileName}`);
+                    } catch (e) { }
                 }
             });
         };
@@ -105,31 +123,31 @@ app.get('/api/convert', async (req, res) => {
         zip.file("index.html", $.html());
 
         // ASSET DOWNLOADER
-        const batchSize = 5; 
+        const batchSize = 5;
         for (let i = 0; i < assets.length; i += batchSize) {
             const batch = assets.slice(i, i + batchSize);
             await Promise.all(batch.map(async (asset) => {
                 try {
-                    const assetRes = await axios.get(asset.url, { 
-                        responseType: 'arraybuffer', 
-                        timeout: 10000, 
-                        headers: { 
+                    const assetRes = await axios.get(asset.url, {
+                        responseType: 'arraybuffer',
+                        timeout: 10000,
+                        headers: {
                             'User-Agent': userAgent,
                             'Referer': targetUrl,
                             'Cookie': cookieString
                         }
                     });
                     zip.file(`${asset.type}/${asset.fileName}`, assetRes.data);
-                } catch (err) {}
+                } catch (err) { }
             }));
         }
 
-        const content = await zip.generateAsync({ 
+        const content = await zip.generateAsync({
             type: "nodebuffer",
             compression: "DEFLATE",
             compressionOptions: { level: 6 }
         });
-        
+
         res.setHeader('Content-Type', 'application/zip');
         res.setHeader('Content-Disposition', `attachment; filename="${zipName}"`);
         res.send(content);
