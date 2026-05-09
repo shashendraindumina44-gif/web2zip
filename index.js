@@ -15,28 +15,27 @@ app.get('/', (req, res) => {
 
 app.get('/api/convert', async (req, res) => {
     let targetUrl = req.query.url;
-    if (!targetUrl) return res.status(400).json({ error: 'URL ekak danna!' });
+    if (!targetUrl) return res.status(400).json({ error: 'URL MISSED!' });
     if (!targetUrl.startsWith('http')) targetUrl = 'https://' + targetUrl;
 
     try {
-        // 1. Site eke HTML eka gannawa
+      
         const response = await axios.get(targetUrl, { 
             headers: { 
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36',
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
                 'Accept-Language': 'en-US,en;q=0.9'
             },
-            timeout: 8000 // Vercel overall timeout ekata kalin nawaththanna
+            timeout: 8000 
         });
 
         const $ = cheerio.load(response.data);
         const zip = new JSZip();
         const urlObj = new URL(targetUrl);
-        const zipName = urlObj.hostname.replace(/\./g, '_') + '_extracted.zip';
+        const zipName = urlObj.hostname.replace(/\./g, '_') + 'zip';
         const assets = [];
 
-        // 2. Offline wada karanna HTML eka clean kirima
-        $('base').remove(); // Offline yaddi base URL awul yana eka nawaththanna
+        $('base').remove(); 
 
         const processAsset = (tag, attr, typeFolder) => {
             $(tag).each((i, el) => {
@@ -44,7 +43,7 @@ app.get('/api/convert', async (req, res) => {
                 if (src && !src.startsWith('data:') && !src.startsWith('#') && !src.startsWith('mailto:')) {
                     try {
                         const assetUrl = new URL(src, targetUrl).href;
-                        // URL parameters ain karala clean filename eka gannawa
+             
                         let cleanPath = new URL(assetUrl).pathname;
                         let fileName = path.basename(cleanPath);
                         
@@ -52,16 +51,16 @@ app.get('/api/convert', async (req, res) => {
                             const extensions = { js: '.js', css: '.css', img: '.png', audio: '.mp3', video: '.mp4', icon: '.ico' };
                             fileName = `${typeFolder}-${i}${extensions[typeFolder] || '.file'}`;
                         } else {
-                            // File names wala awul thiyena ewa clean karanawa
+                           
                             fileName = fileName.replace(/[^a-zA-Z0-9.\-_]/g, '_');
                         }
 
                         assets.push({ type: typeFolder, url: assetUrl, fileName });
                         
-                        // Path eka explicit widiyata local folder ekata point karanawa (CSS apply wenna meka wadagath)
+                       
                         $(el).attr(attr, `./${typeFolder}/${fileName}`); 
                     } catch (e) {
-                        // Invalid URLs ignore karanawa
+                        
                     }
                 }
             });
@@ -75,21 +74,20 @@ app.get('/api/convert', async (req, res) => {
         processAsset('link[rel="shortcut icon"]', 'href', 'icon');
         processAsset('link[rel="apple-touch-icon"]', 'href', 'icon');
         processAsset('audio', 'src', 'audio');
-        processAsset('source', 'src', 'media'); // catch all for audio/video sources
+        processAsset('source', 'src', 'media');
         processAsset('video', 'src', 'video');
 
-        // Update karapu HTML eka zip ekata danawa
         zip.file("index.html", $.html());
 
-        // 3. Batch Downloader (Vercel crash wena eka nawaththanna)
-        const batchSize = 5; // Ekawara files 5k witharai download wenne
+     
+        const batchSize = 5; // 
         for (let i = 0; i < assets.length; i += batchSize) {
             const batch = assets.slice(i, i + batchSize);
             const downloadTasks = batch.map(async (asset) => {
                 try {
                     const assetRes = await axios.get(asset.url, { 
                         responseType: 'arraybuffer', 
-                        timeout: 4000, // Eka file ekakata maximum 4 seconds
+                        timeout: 4000, 
                         headers: { 
                             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
                             'Referer': targetUrl
@@ -103,10 +101,10 @@ app.get('/api/convert', async (req, res) => {
             await Promise.all(downloadTasks);
         }
 
-        // 4. Zip eka generate karala send kirima
+     
         const content = await zip.generateAsync({ 
             type: "nodebuffer",
-            compression: "STORE" // Vercel CPU load eka adu karanna compression eka adu kala
+            compression: "STORE" 
         });
         
         res.setHeader('Content-Type', 'application/zip');
