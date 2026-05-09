@@ -3,6 +3,8 @@ const axios = require('axios');
 const cheerio = require('cheerio');
 const JSZip = require('jszip');
 const path = require('path');
+const puppeteer = require('puppeteer-core');
+const chromium = require('@sparticuz/chromium');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -14,51 +16,28 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-const getStealthHeaders = () => ({
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-    'Accept-Language': 'en-US,en;q=0.9',
-    'Accept-Encoding': 'gzip, deflate, br',
-    'Cache-Control': 'max-age=0',
-    'Sec-Ch-Ua': '"Not-A.Brand";v="99", "Chromium";v="124"',
-    'Sec-Ch-Ua-Mobile': '?0',
-    'Sec-Ch-Ua-Platform': '"Windows"',
-    'Sec-Fetch-Dest': 'document',
-    'Sec-Fetch-Mode': 'navigate',
-    'Sec-Fetch-Site': 'none',
-    'Sec-Fetch-User': '?1',
-    'Upgrade-Insecure-Requests': '1'
-});
+// Helper to launch browser (Optimized Golden Combo for Vercel)
+async function launchBrowser() {
+    return await puppeteer.launch({
+        args: [
+            ...chromium.args,
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-blink-features=AutomationControlled',
+            '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36'
+        ],
+        defaultViewport: chromium.defaultViewport,
+        executablePath: await chromium.executablePath(),
+        headless: chromium.headless,
+        ignoreHTTPSErrors: true,
+    });
+}
 
-/**
- * 🕵️ STEALTH PROXY
- * Uses high-fidelity headers to try and bypass Cloudflare IP blocks.
- */
-app.get('/api/proxy', async (req, res) => {
-    const targetUrl = req.query.url;
-    if (!targetUrl) return res.status(400).send('URL missing');
-    
-    try {
-        const response = await axios.get(targetUrl, {
-            responseType: 'arraybuffer',
-            headers: getStealthHeaders(),
-            timeout: 15000,
-            validateStatus: () => true
-        });
-        
-        res.setHeader('Content-Type', response.headers['content-type'] || 'application/octet-stream');
-        res.setHeader('Access-Control-Allow-Origin', '*');
-        res.status(response.status).send(response.data);
-    } catch (error) {
-        res.status(500).send(`Stealth Proxy Failure: ${error.message}`);
-    }
-});
-
-/**
- * ⚡ SIMPLE MODE (Stealth Optimized)
- */
 app.get('/api/convert', async (req, res) => {
     let targetUrl = req.query.url;
+    const mode = req.query.mode || 'simple'; 
+
     if (!targetUrl) return res.status(400).json({ error: 'URL MISSED!' });
     if (!targetUrl.startsWith('http')) targetUrl = 'https://' + targetUrl;
 
@@ -66,19 +45,42 @@ app.get('/api/convert', async (req, res) => {
     const urlObj = new URL(targetUrl);
     const zipName = urlObj.hostname.replace('www.', '').replace(/\./g, '_') + '.zip';
     const assets = [];
+    const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36';
 
+    let browser;
     try {
-        const response = await axios.get(targetUrl, { 
-            headers: getStealthHeaders(),
-            timeout: 15000 
-        });
-        
-        if (response.status === 403) throw new Error("Cloudflare Block (403)");
+        let htmlContent = '';
+        let cookieString = '';
 
-        const htmlContent = response.data;
+        if (mode === 'advanced') {
+            logServer(`Initiating Advanced Mode for: ${targetUrl}`);
+            browser = await launchBrowser();
+            const page = await browser.newPage();
+            
+            // --- STEALTH EVASIONS ---
+            await page.evaluateOnNewDocument(() => {
+                Object.defineProperty(navigator, 'webdriver', { get: () => false });
+            });
+
+            await page.goto(targetUrl, { waitUntil: 'networkidle2', timeout: 45000 });
+            
+            // Wait for React/Hydration
+            await new Promise(r => setTimeout(r, 3000));
+
+            htmlContent = await page.content();
+            const cookies = await page.cookies();
+            cookieString = cookies.map(c => `${c.name}=${c.value}`).join('; ');
+        } else {
+            const response = await axios.get(targetUrl, { 
+                headers: { 'User-Agent': userAgent },
+                timeout: 15000 
+            });
+            htmlContent = response.data;
+        }
+
         const $ = cheerio.load(htmlContent);
-
         $('base').remove();
+
         const processAsset = (tag, attr, typeFolder) => {
             $(tag).each((i, el) => {
                 let src = $(el).attr(attr);
@@ -99,12 +101,13 @@ app.get('/api/convert', async (req, res) => {
 
         zip.file("index.html", $.html());
 
+        // Asset Downloader
         for (const asset of assets) {
             try {
                 const res = await axios.get(asset.url, { 
                     responseType: 'arraybuffer', 
                     timeout: 5000,
-                    headers: getStealthHeaders()
+                    headers: { 'User-Agent': userAgent, 'Cookie': cookieString, 'Referer': targetUrl }
                 });
                 zip.file(asset.path, res.data);
             } catch (err) {}
@@ -114,13 +117,18 @@ app.get('/api/convert', async (req, res) => {
         res.setHeader('Content-Type', 'application/zip');
         res.setHeader('Content-Disposition', `attachment; filename="${zipName}"`);
         res.send(content);
+
     } catch (error) {
-        res.status(500).json({ 
-            error: 'Extraction failed.', 
-            details: error.message 
-        });
+        console.error('Final Engine Error:', error.message);
+        res.status(500).json({ error: 'Automated extraction failed.', details: error.message });
+    } finally {
+        if (browser) await browser.close();
     }
 });
+
+function logServer(msg) {
+    console.log(`[Lord Indumina Protocol] ${msg}`);
+}
 
 module.exports = app;
 
