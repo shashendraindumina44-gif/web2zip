@@ -3,32 +3,8 @@ const axios = require('axios');
 const cheerio = require('cheerio');
 const JSZip = require('jszip');
 const path = require('path');
-const puppeteer = require('puppeteer-extra');
-const StealthPlugin = require('puppeteer-extra-plugin-stealth');
+const { chromium: playwright } = require('playwright-core');
 const chromium = require('@sparticuz/chromium');
-
-// Vercel Bundler Fix: Explicitly require stealth evasions to ensure they are included in the deployment
-try {
-    require('puppeteer-extra-plugin-stealth/evasions/chrome.app');
-    require('puppeteer-extra-plugin-stealth/evasions/chrome.csi');
-    require('puppeteer-extra-plugin-stealth/evasions/chrome.loadTimes');
-    require('puppeteer-extra-plugin-stealth/evasions/chrome.runtime');
-    require('puppeteer-extra-plugin-stealth/evasions/iframe.contentWindow');
-    require('puppeteer-extra-plugin-stealth/evasions/media.codecs');
-    require('puppeteer-extra-plugin-stealth/evasions/navigator.languages');
-    require('puppeteer-extra-plugin-stealth/evasions/navigator.permissions');
-    require('puppeteer-extra-plugin-stealth/evasions/navigator.plugins');
-    require('puppeteer-extra-plugin-stealth/evasions/navigator.webdriver');
-    require('puppeteer-extra-plugin-stealth/evasions/sourceurl');
-    require('puppeteer-extra-plugin-stealth/evasions/defaultArgs');
-    require('puppeteer-extra-plugin-stealth/evasions/stack.trace');
-    require('puppeteer-extra-plugin-stealth/evasions/user-agent-override');
-    require('puppeteer-extra-plugin-stealth/evasions/webgl.vendor');
-    require('puppeteer-extra-plugin-stealth/evasions/window.outerdimensions');
-} catch (e) {}
-
-// Initialize Stealth Plugin
-puppeteer.use(StealthPlugin());
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -39,23 +15,22 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// Helper to launch browser (Optimized for Vercel)
+// Helper to launch browser (Optimized for Vercel with Playwright)
 async function launchBrowser() {
-    return await puppeteer.launch({
-        args: [...chromium.args, '--no-sandbox', '--disable-setuid-sandbox'],
-        defaultViewport: chromium.defaultViewport,
+    return await playwright.launch({
+        args: [...chromium.args, '--no-sandbox', '--disable-setuid-sandbox', '--disable-blink-features=AutomationControlled'],
         executablePath: await chromium.executablePath(),
         headless: chromium.headless,
     });
 }
-// conver api path
+
 app.get('/api/convert', async (req, res) => {
     let targetUrl = req.query.url;
-    const mode = req.query.mode || 'simple'; // 'simple' or 'advanced'
+    const mode = req.query.mode || 'simple'; 
 
     if (!targetUrl) return res.status(400).json({ error: 'URL MISSED!' });
     if (!targetUrl.startsWith('http')) targetUrl = 'https://' + targetUrl;
-    // zip converter
+
     const zip = new JSZip();
     const urlObj = new URL(targetUrl);
     const zipName = urlObj.hostname.replace('www.', '').replace(/\./g, '_') + '.zip';
@@ -65,32 +40,36 @@ app.get('/api/convert', async (req, res) => {
     const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36';
 
     let browser;
-    // modes selction
     try {
         if (mode === 'advanced') {
-            // ADVANCED MODE (PUPPETEER)
+            // --- ADVANCED MODE (PLAYWRIGHT) ---
             browser = await launchBrowser();
-            const page = await browser.newPage();
-            await page.setUserAgent(userAgent);
-            await page.goto(targetUrl, { waitUntil: 'networkidle2', timeout: 60000 });
-            await new Promise(resolve => setTimeout(resolve, 3000));
+            const context = await browser.newContext({ userAgent });
+            const page = await context.newPage();
+            
+            // Go to URL and wait for network to settle
+            await page.goto(targetUrl, { waitUntil: 'networkidle', timeout: 60000 });
+            
+            // Extra wait for React hydration
+            await page.waitForTimeout(3000); 
+
             htmlContent = await page.content();
-            const cookies = await page.cookies();
+            const cookies = await context.cookies();
             cookieString = cookies.map(c => `${c.name}=${c.value}`).join('; ');
         } else {
-            //SIMPLE MODE (AXIOS)
-            const response = await axios.get(targetUrl, {
+            // --- SIMPLE MODE (AXIOS) ---
+            const response = await axios.get(targetUrl, { 
                 headers: { 'User-Agent': userAgent },
-                timeout: 15000
+                timeout: 15000 
             });
             htmlContent = response.data;
         }
 
         const $ = cheerio.load(htmlContent);
 
-        //  SECURITY & CLEANUP
-        $('base').remove();
-        $('script[src*="google-analytics"]').remove();
+        // SECURITY & CLEANUP
+        $('base').remove(); 
+        $('script[src*="google-analytics"]').remove(); 
         $('script[src*="gtm.js"]').remove();
 
         const processAsset = (tag, attr, typeFolder) => {
@@ -108,13 +87,12 @@ app.get('/api/convert', async (req, res) => {
                             fileName = fileName.replace(/[^a-zA-Z0-9.\-_]/g, '_');
                         }
                         assets.push({ type: typeFolder, url: assetUrl, fileName });
-                        $(el).attr(attr, `./${typeFolder}/${fileName}`);
-                    } catch (e) { }
+                        $(el).attr(attr, `./${typeFolder}/${fileName}`); 
+                    } catch (e) {}
                 }
             });
         };
 
-        // resources to include in zip
         processAsset('link[rel="stylesheet"]', 'href', 'css');
         processAsset('script[src]', 'src', 'js');
         processAsset('img', 'src', 'img');
@@ -125,31 +103,31 @@ app.get('/api/convert', async (req, res) => {
         zip.file("index.html", $.html());
 
         // ASSET DOWNLOADER
-        const batchSize = 5;
+        const batchSize = 5; 
         for (let i = 0; i < assets.length; i += batchSize) {
             const batch = assets.slice(i, i + batchSize);
             await Promise.all(batch.map(async (asset) => {
                 try {
-                    const assetRes = await axios.get(asset.url, {
-                        responseType: 'arraybuffer',
-                        timeout: 10000,
-                        headers: {
+                    const assetRes = await axios.get(asset.url, { 
+                        responseType: 'arraybuffer', 
+                        timeout: 10000, 
+                        headers: { 
                             'User-Agent': userAgent,
                             'Referer': targetUrl,
                             'Cookie': cookieString
                         }
                     });
                     zip.file(`${asset.type}/${asset.fileName}`, assetRes.data);
-                } catch (err) { }
+                } catch (err) {}
             }));
         }
 
-        const content = await zip.generateAsync({
+        const content = await zip.generateAsync({ 
             type: "nodebuffer",
             compression: "DEFLATE",
             compressionOptions: { level: 6 }
         });
-
+        
         res.setHeader('Content-Type', 'application/zip');
         res.setHeader('Content-Disposition', `attachment; filename="${zipName}"`);
         res.send(content);
@@ -165,7 +143,5 @@ app.get('/api/convert', async (req, res) => {
 module.exports = app;
 
 if (process.env.NODE_ENV !== 'production') {
-    app.listen(PORT, () => console.log(`[Lord Indumina Protocol] Online on Port: ${PORT}`));
+    app.listen(PORT, () => console.log(`[shashendraindumina44-gif Protocol] Online on Port: ${PORT}`));
 }
-
-
