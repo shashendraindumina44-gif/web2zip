@@ -73,7 +73,7 @@
 <body>
 
     <div class="anime-border bg-[#16161e] w-full max-w-lg p-8 relative">
-        <div class="absolute top-2 right-4 text-[10px] opacity-50">VER 4.0.0 // GOLDEN_CORE</div>
+        <div class="absolute top-2 right-4 text-[10px] opacity-50">VER 5.0.0 // PURE_STEALTH</div>
         
         <div class="mb-8">
             <h1 class="text-4xl font-black glitch-text tracking-tighter">
@@ -90,15 +90,9 @@
                     placeholder="HTTP://SOURCE_LINK.COM" value="https://">
             </div>
 
-            <div class="flex items-center justify-between p-4 bg-black/40 border border-purple-900/30 rounded">
-                <div>
-                    <p class="text-[11px] font-bold text-white">AUTOMATED_ADVANCED_MODE</p>
-                    <p class="text-[9px] text-gray-500 italic">Bypass Cloudflare & Render React automatically on the server.</p>
-                </div>
-                <label class="relative inline-flex items-center cursor-pointer">
-                    <input type="checkbox" id="advancedMode" class="sr-only peer">
-                    <div class="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#7000ff] shadow-[0_0_10px_rgba(112,0,255,0.4)]"></div>
-                </label>
+            <div class="p-4 bg-black/40 border border-purple-900/30 rounded">
+                <p class="text-[11px] font-bold text-white uppercase tracking-widest">Binary-Free Scrape Mode</p>
+                <p class="text-[9px] text-gray-500 italic mt-1">Optimized for Vercel. Zero crashes. 100% stable extraction.</p>
             </div>
 
             <button onclick="runScraper()" id="runBtn" class="btn-execute w-full p-5 italic">
@@ -109,7 +103,8 @@
         <div id="sysLog" class="mt-8 status-box p-4 hidden">
             <div class="text-[11px] space-y-1" id="logContent">
                 <p>> Initializing Scraper...</p>
-                <p id="modeLog">> Protocol: Simple (Axios Engine)</p>
+                <p>> Protocol: Pure Stealth (Axios Engine)</p>
+                <p>> Executing Extraction...</p>
             </div>
         </div>
 
@@ -125,23 +120,20 @@
     <script>
         function runScraper() {
             const url = document.getElementById('urlInput').value;
-            const isAdvanced = document.getElementById('advancedMode').checked;
             if (!url || url === 'https://') return alert('ERROR: URL_REQUIRED');
 
             document.getElementById('sysLog').classList.remove('hidden');
-            document.getElementById('modeLog').innerText = isAdvanced ? "> Protocol: Advanced (Puppeteer Engine)" : "> Protocol: Simple (Axios Engine)";
             
             const btn = document.getElementById('runBtn');
             btn.innerText = "EXTRACTING...";
             btn.disabled = true;
 
-            const mode = isAdvanced ? 'advanced' : 'simple';
-            window.location.href = `/api/convert?url=${encodeURIComponent(url)}&mode=${mode}`;
+            window.location.href = `/api/convert?url=${encodeURIComponent(url)}`;
             
             setTimeout(() => {
                 btn.innerText = "Execute Extraction";
                 btn.disabled = false;
-            }, 10000);
+            }, 5000);
         }
     </script>
 </body>
