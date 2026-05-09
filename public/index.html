@@ -69,18 +69,12 @@
             border-left: 3px solid #7000ff;
             background: rgba(112, 0, 255, 0.05);
         }
-
-        .api-panel {
-            background: rgba(0, 0, 0, 0.4);
-            border: 1px dashed #7000ff;
-            font-size: 10px;
-        }
     </style>
 </head>
 <body>
 
     <div class="anime-border bg-[#16161e] w-full max-w-lg p-8 relative">
-        <div class="absolute top-2 right-4 text-[10px] opacity-50">VER 3.0.0 // HYBRID_CORE</div>
+        <div class="absolute top-2 right-4 text-[10px] opacity-50">VER 3.0.1 // RECOVERY_CORE</div>
         
         <div class="mb-8">
             <h1 class="text-4xl font-black glitch-text tracking-tighter">
@@ -101,7 +95,7 @@
             <div class="flex items-center justify-between p-4 bg-black/40 border border-purple-900/30 rounded">
                 <div>
                     <p class="text-[11px] font-bold text-white">ADVANCED_USER_RENDERING</p>
-                    <p class="text-[9px] text-gray-500 italic">Render React/Cloudflare sites in YOUR browser (0% Crash).</p>
+                    <p class="text-[9px] text-gray-500 italic">Render React/Cloudflare sites locally (No Vercel Crashes).</p>
                 </div>
                 <label class="relative inline-flex items-center cursor-pointer">
                     <input type="checkbox" id="advancedMode" class="sr-only peer">
@@ -117,7 +111,6 @@
         <div id="sysLog" class="mt-8 status-box p-4 hidden">
             <div class="text-[11px] space-y-1" id="logContent">
                 <p>> Initializing Scraper...</p>
-                <p id="modeLog">> Protocol: Simple (Axios Engine)</p>
             </div>
         </div>
 
@@ -138,7 +131,9 @@
             const p = document.createElement('p');
             p.style.color = color;
             p.innerText = `> ${msg}`;
-            document.getElementById('logContent').appendChild(p);
+            const container = document.getElementById('logContent');
+            container.appendChild(p);
+            container.scrollTop = container.scrollHeight;
         };
 
         async function runScraper() {
@@ -156,6 +151,8 @@
 
             if (isAdvanced) {
                 await executeUserSideExtraction(url);
+                btn.innerText = "Execute Extraction";
+                btn.disabled = false;
             } else {
                 log("Executing Server-Side Scrape...");
                 window.location.href = `/api/convert?url=${encodeURIComponent(url)}`;
@@ -174,36 +171,35 @@
                 log("Fetching Raw Code via Proxy...");
                 const proxyUrl = `/api/proxy?url=${encodeURIComponent(targetUrl)}`;
                 const response = await fetch(proxyUrl);
+                if (!response.ok) throw new Error(`Proxy failed: ${response.status}`);
                 const html = await response.text();
 
                 log("Building Render Chamber (Executing JS)...", "#7000ff");
                 const frame = document.getElementById('renderFrame');
                 const frameDoc = frame.contentDocument || frame.contentWindow.document;
                 
-                // Inject the HTML into the frame to let the user's browser run the scripts
                 frameDoc.open();
                 frameDoc.write(html);
                 frameDoc.close();
 
-                log("Waiting for React Hydration (5s)...");
-                await new Promise(r => setTimeout(r, 5000));
+                log("Waiting for Hydration (8s)...");
+                await new Promise(r => setTimeout(r, 8000));
 
                 log("Capturing Rendered DOM...");
-                const renderedHtml = frameDoc.documentElement.outerHTML;
-                
-                log("Extracting Asset Map...");
-                const tempDiv = document.createElement('div');
-                tempDiv.innerHTML = renderedHtml;
+                // Use frameDoc directly to ensure we get the fully hydrated tree
+                const renderedDoc = frameDoc.cloneNode(true);
                 const assets = [];
                 
                 const process = (selector, attr, folder) => {
-                    tempDiv.querySelectorAll(selector).forEach((el, i) => {
+                    renderedDoc.querySelectorAll(selector).forEach((el, i) => {
                         const src = el.getAttribute(attr);
-                        if (src && !src.startsWith('data:')) {
-                            const absUrl = new URL(src, targetUrl).href;
-                            const fileName = `file-${i}.${folder}`;
-                            assets.push({ url: absUrl, path: `${folder}/${fileName}` });
-                            el.setAttribute(attr, `./${folder}/${fileName}`);
+                        if (src && !src.startsWith('data:') && !src.startsWith('#')) {
+                            try {
+                                const absUrl = new URL(src, targetUrl).href;
+                                const fileName = `file-${i}-${Math.random().toString(36).substring(7)}.${folder}`;
+                                assets.push({ url: absUrl, path: `${folder}/${fileName}` });
+                                el.setAttribute(attr, `./${folder}/${fileName}`);
+                            } catch (e) {}
                         }
                     });
                 };
@@ -212,17 +208,17 @@
                 process('script[src]', 'src', 'js');
                 process('img', 'src', 'img');
 
-                zip.file("index.html", tempDiv.innerHTML);
+                log(`Extracting Asset Map (Total: ${assets.length})...`);
+                zip.file("index.html", renderedDoc.documentElement.outerHTML);
 
-                log(`Downloading Assets (Count: ${assets.length})...`);
                 for (const asset of assets) {
                     try {
                         const res = await fetch(`/api/proxy?url=${encodeURIComponent(asset.url)}`);
-                        const blob = await res.blob();
-                        zip.file(asset.path, blob);
-                    } catch (e) {
-                        log(`Asset Failed: ${asset.path}`, "red");
-                    }
+                        if (res.ok) {
+                            const blob = await res.blob();
+                            zip.file(asset.path, blob);
+                        }
+                    } catch (e) {}
                 }
 
                 log("Generating Final ZIP Package...", "#00ff88");
@@ -235,18 +231,8 @@
                 link.click();
 
                 log("EXTRACTION COMPLETE!", "#00ff88");
-                const btn = document.getElementById('runBtn');
-                btn.innerText = "SUCCESS";
-                setTimeout(() => {
-                    btn.innerText = "Execute Extraction";
-                    btn.disabled = false;
-                }, 3000);
-
             } catch (err) {
                 log(`CRITICAL ERROR: ${err.message}`, "red");
-                const btn = document.getElementById('runBtn');
-                btn.innerText = "RETRY";
-                btn.disabled = false;
             }
         }
     </script>

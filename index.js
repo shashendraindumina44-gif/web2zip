@@ -15,9 +15,8 @@ app.get('/', (req, res) => {
 });
 
 /**
- * 🛡️ ADVANCED MODE PROXY (User-Side Support)
- * This allows the user's browser to fetch content without CORS blocks.
- * No rendering happens here - only data tunneling to prevent Vercel crashes.
+ * 🛡️ ADVANCED MODE PROXY (Improved)
+ * Tunnels requests to bypass CORS while allowing the browser to render content.
  */
 app.get('/api/proxy', async (req, res) => {
     const targetUrl = req.query.url;
@@ -30,21 +29,20 @@ app.get('/api/proxy', async (req, res) => {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
                 'Accept': '*/*',
             },
-            timeout: 15000
+            timeout: 15000,
+            validateStatus: () => true // Forward all status codes
         });
         
-        // Forward content-type and data
-        res.setHeader('Content-Type', response.headers['content-type'] || 'text/html');
-        res.setHeader('Access-Control-Allow-Origin', '*'); // Allow browser access
-        res.send(response.data);
+        res.setHeader('Content-Type', response.headers['content-type'] || 'application/octet-stream');
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.status(response.status).send(response.data);
     } catch (error) {
-        res.status(500).send(error.message);
+        res.status(500).send(`Proxy Error: ${error.message}`);
     }
 });
 
 /**
- * ⚡ SIMPLE MODE (Server-Side)
- * Optimized for speed on standard websites.
+ * ⚡ SIMPLE MODE (Server-Side with Better Error Reporting)
  */
 app.get('/api/convert', async (req, res) => {
     let targetUrl = req.query.url;
@@ -65,7 +63,6 @@ app.get('/api/convert', async (req, res) => {
         const htmlContent = response.data;
         const $ = cheerio.load(htmlContent);
 
-        // Cleanup
         $('base').remove();
         $('script[src*="google-analytics"]').remove();
 
@@ -75,7 +72,7 @@ app.get('/api/convert', async (req, res) => {
                 if (src && !src.startsWith('data:') && !src.startsWith('#')) {
                     try {
                         const assetUrl = new URL(src, targetUrl).href;
-                        const fileName = `file-${i}.${typeFolder}`;
+                        const fileName = `file-${i}-${Math.random().toString(36).substring(7)}.${typeFolder}`;
                         assets.push({ url: assetUrl, path: `${typeFolder}/${fileName}` });
                         $(el).attr(attr, `./${typeFolder}/${fileName}`);
                     } catch (e) {}
@@ -89,11 +86,22 @@ app.get('/api/convert', async (req, res) => {
 
         zip.file("index.html", $.html());
 
-        for (const asset of assets) {
-            try {
-                const res = await axios.get(asset.url, { responseType: 'arraybuffer', timeout: 5000 });
-                zip.file(asset.path, res.data);
-            } catch (err) {}
+        // Concurrent downloads with limit
+        const downloadBatch = async (items) => {
+            await Promise.all(items.map(async (asset) => {
+                try {
+                    const res = await axios.get(asset.url, { 
+                        responseType: 'arraybuffer', 
+                        timeout: 8000,
+                        headers: { 'User-Agent': userAgent }
+                    });
+                    zip.file(asset.path, res.data);
+                } catch (err) {}
+            }));
+        };
+
+        for (let i = 0; i < assets.length; i += 5) {
+            await downloadBatch(assets.slice(i, i + 5));
         }
 
         const content = await zip.generateAsync({ type: "nodebuffer" });
@@ -101,7 +109,11 @@ app.get('/api/convert', async (req, res) => {
         res.setHeader('Content-Disposition', `attachment; filename="${zipName}"`);
         res.send(content);
     } catch (error) {
-        res.status(500).json({ error: 'Server-side extraction failed.' });
+        console.error('Simple Mode Error:', error.message);
+        res.status(500).json({ 
+            error: 'Server-side extraction failed.', 
+            details: error.response ? `Status ${error.response.status}` : error.message 
+        });
     }
 });
 
