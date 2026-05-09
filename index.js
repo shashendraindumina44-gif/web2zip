@@ -41,19 +41,20 @@ app.get('/api/proxy', async (req, res) => {
 });
 
 /**
- * ⚡ SIMPLE MODE (PC & MOBILE COMPATIBLE)
+ * ⚡ ADAPTIVE CONVERTER (PC & MOBILE OPTIMIZED)
  */
 app.get('/api/convert', async (req, res) => {
     let targetUrl = req.query.url;
     if (!targetUrl) return res.status(400).json({ error: 'URL MISSED!' });
     if (!targetUrl.startsWith('http')) targetUrl = 'https://' + targetUrl;
 
+    // 🕵️ DEVICE DETECTION (User Agent එකෙන් Mobile ද කියලා බලනවා)
     const userAgentStr = req.headers['user-agent'] || '';
     const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(userAgentStr);
 
     const zip = new JSZip();
     const urlObj = new URL(targetUrl);
-    const zipName = urlObj.hostname.replace('www.', '').replace(/\./g, '_') + '.zip';
+    const zipName = urlObj.hostname.replace('www.', '').replace(/\./g, '_') + (isMobile ? '_mobile.zip' : '_pc.zip');
     const assets = [];
     const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
 
@@ -67,6 +68,7 @@ app.get('/api/convert', async (req, res) => {
 
         $('base').remove();
 
+        // 🛠️ ASSET PROCESSING LOGIC
         const processAsset = async (tag, attr, folder) => {
             const elements = $(tag);
             for (let i = 0; i < elements.length; i++) {
@@ -75,36 +77,42 @@ app.get('/api/convert', async (req, res) => {
                 if (src && !src.startsWith('data:') && !src.startsWith('#')) {
                     try {
                         const assetUrl = new URL(src, targetUrl).href;
-                        const fileName = `file-${i}.${folder}`;
                         
+                        // 📱 MOBILE නම් CSS සහ JS ඔක්කොම HTML එක ඇතුළට දානවා (Inline)
                         if (isMobile && (folder === 'css' || folder === 'js')) {
-                            // 📱 MOBILE: Inline everything for easy access
                             const assetRes = await axios.get(assetUrl, { timeout: 5000, headers: { 'User-Agent': userAgent } });
                             if (folder === 'css') {
-                                $('head').append(`<style>${assetRes.data}</style>`);
+                                $('head').append(`<style>\n/* Inlined: ${src} */\n${assetRes.data}\n</style>`);
                             } else {
-                                $('body').append(`<script>${assetRes.data}</script>`);
+                                $('body').append(`<script>\n/* Inlined: ${src} */\n${assetRes.data}\n</script>`);
                             }
-                            $(el).remove();
+                            $(el).remove(); // පරණ Tag එක අයින් කරනවා
                         } else {
-                            // 💻 PC: Normal Folder Structure
+                            // 💻 PC නම් පරණ විදිහටම Folders හදලා ලින්ක් කරනවා
+                            const fileName = `file-${i}.${folder}`;
                             assets.push({ url: assetUrl, path: `${folder}/${fileName}` });
                             $(el).attr(attr, `./${folder}/${fileName}`);
                         }
-                    } catch (e) {}
+                    } catch (e) {
+                        console.log(`Error processing ${src}:`, e.message);
+                    }
                 }
             }
         };
 
+        // Assets Process කරනවා (Async නිසා await ඕනෑ)
         await processAsset('link[rel="stylesheet"]', 'href', 'css');
         await processAsset('script[src]', 'src', 'js');
         await processAsset('img', 'src', 'img');
 
-        // Mobile වලදී images පේන්න original site එක base එක විදිහට දානවා
-        if (isMobile) $('head').prepend(`<base href="${targetUrl}">`);
+        // Mobile වලදී පින්තූර ටික Original සයිට් එකෙන් අදින්න Base එකක් දානවා
+        if (isMobile) {
+            $('head').prepend(`<base href="${targetUrl}">`);
+        }
 
         zip.file("index.html", $.html());
 
+        // PC එකේදී විතරක් CSS/JS/IMG files ටික Folders වලට දානවා
         for (const asset of assets) {
             try {
                 const res = await axios.get(asset.url, { responseType: 'arraybuffer', timeout: 5000, headers: { 'User-Agent': userAgent } });
