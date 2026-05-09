@@ -102,6 +102,15 @@
                 </label>
             </div>
 
+            <div class="p-4 bg-black/40 border border-[#00ff88]/30 rounded">
+                <div class="flex justify-between items-center mb-2">
+                    <p class="text-[10px] font-bold text-[#00ff88] uppercase tracking-widest">System API Endpoint</p>
+                    <span class="text-[8px] bg-[#00ff88] text-black px-1.5 py-0.5 rounded-sm font-bold">GET</span>
+                </div>
+                <code class="block text-[10px] text-gray-400 break-all p-2 bg-black border border-[#7000ff]/30 rounded select-all selection:bg-[#7000ff] selection:text-white">
+                    https://web2zip-mu.vercel.app/api/convert?url={<span class="text-white">TARGET_URL</span>}
+                </code>
+            </div>
             <button onclick="runScraper()" id="runBtn" class="btn-execute w-full p-5 italic">
                 Execute Extraction
             </button>
