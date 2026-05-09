@@ -3,38 +3,51 @@ const axios = require('axios');
 const cheerio = require('cheerio');
 const JSZip = require('jszip');
 const path = require('path');
-const { JSDOM, VirtualConsole } = require('jsdom');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.json());
 
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-async function buildWebContent(url, rawHtml) {
-    const virtualConsole = new VirtualConsole();
-    const dom = new JSDOM(rawHtml, {
-        url: url,
-        runScripts: "dangerously",
-        pretendToBeVisual: true,
-        virtualConsole
-    });
+/**
+ * 🛡️ ADVANCED MODE PROXY (User-Side Support)
+ * This allows the user's browser to fetch content without CORS blocks.
+ * No rendering happens here - only data tunneling to prevent Vercel crashes.
+ */
+app.get('/api/proxy', async (req, res) => {
+    const targetUrl = req.query.url;
+    if (!targetUrl) return res.status(400).send('URL missing');
+    
+    try {
+        const response = await axios.get(targetUrl, {
+            responseType: 'arraybuffer',
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+                'Accept': '*/*',
+            },
+            timeout: 15000
+        });
+        
+        // Forward content-type and data
+        res.setHeader('Content-Type', response.headers['content-type'] || 'text/html');
+        res.setHeader('Access-Control-Allow-Origin', '*'); // Allow browser access
+        res.send(response.data);
+    } catch (error) {
+        res.status(500).send(error.message);
+    }
+});
 
-    // Smart Hydration Wait (Reduced to save Vercel execution time)
-    await new Promise(resolve => setTimeout(resolve, 2000));
-
-    const renderedHtml = dom.serialize();
-    dom.window.close(); 
-    return renderedHtml;
-}
-
+/**
+ * ⚡ SIMPLE MODE (Server-Side)
+ * Optimized for speed on standard websites.
+ */
 app.get('/api/convert', async (req, res) => {
     let targetUrl = req.query.url;
-    const mode = req.query.mode || 'simple'; 
-
     if (!targetUrl) return res.status(400).json({ error: 'URL MISSED!' });
     if (!targetUrl.startsWith('http')) targetUrl = 'https://' + targetUrl;
 
@@ -42,45 +55,29 @@ app.get('/api/convert', async (req, res) => {
     const urlObj = new URL(targetUrl);
     const zipName = urlObj.hostname.replace('www.', '').replace(/\./g, '_') + '.zip';
     const assets = [];
-    let htmlContent = '';
     const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
 
     try {
-        // --- 1. FETCH RAW CONTENT ---
         const response = await axios.get(targetUrl, { 
             headers: { 'User-Agent': userAgent },
-            timeout: 20000 
+            timeout: 15000 
         });
-        htmlContent = response.data;
-
-        // --- 2. ADVANCED MODE (RUN JS & BUILD WEB) ---
-        if (mode === 'advanced') {
-            htmlContent = await buildWebContent(targetUrl, htmlContent);
-        }
-
+        const htmlContent = response.data;
         const $ = cheerio.load(htmlContent);
 
-        // SECURITY & CLEANUP
-        $('base').remove(); 
-        $('script[src*="google-analytics"]').remove(); 
-        $('script[src*="gtm.js"]').remove();
+        // Cleanup
+        $('base').remove();
+        $('script[src*="google-analytics"]').remove();
 
         const processAsset = (tag, attr, typeFolder) => {
             $(tag).each((i, el) => {
                 let src = $(el).attr(attr);
-                if (src && !src.startsWith('data:') && !src.startsWith('#') && !src.startsWith('mailto:')) {
+                if (src && !src.startsWith('data:') && !src.startsWith('#')) {
                     try {
                         const assetUrl = new URL(src, targetUrl).href;
-                        let cleanPath = new URL(assetUrl).pathname;
-                        let fileName = path.basename(cleanPath);
-                        if (!fileName || !fileName.includes('.')) {
-                            const extensions = { js: '.js', css: '.css', img: '.png', icon: '.ico', media: '.mp4' };
-                            fileName = `${typeFolder}-${i}${extensions[typeFolder] || '.file'}`;
-                        } else {
-                            fileName = fileName.replace(/[^a-zA-Z0-9.\-_]/g, '_');
-                        }
-                        assets.push({ type: typeFolder, url: assetUrl, fileName });
-                        $(el).attr(attr, `./${typeFolder}/${fileName}`); 
+                        const fileName = `file-${i}.${typeFolder}`;
+                        assets.push({ url: assetUrl, path: `${typeFolder}/${fileName}` });
+                        $(el).attr(attr, `./${typeFolder}/${fileName}`);
                     } catch (e) {}
                 }
             });
@@ -89,41 +86,22 @@ app.get('/api/convert', async (req, res) => {
         processAsset('link[rel="stylesheet"]', 'href', 'css');
         processAsset('script[src]', 'src', 'js');
         processAsset('img', 'src', 'img');
-        processAsset('link[rel*="icon"]', 'href', 'icon');
-        processAsset('audio source', 'src', 'audio');
-        processAsset('video source', 'src', 'video');
 
         zip.file("index.html", $.html());
 
-        // ASSET DOWNLOADER
-        const batchSize = 5; 
-        for (let i = 0; i < assets.length; i += batchSize) {
-            const batch = assets.slice(i, i + batchSize);
-            await Promise.all(batch.map(async (asset) => {
-                try {
-                    const assetRes = await axios.get(asset.url, { 
-                        responseType: 'arraybuffer', 
-                        timeout: 10000, 
-                        headers: { 'User-Agent': userAgent, 'Referer': targetUrl }
-                    });
-                    zip.file(`${asset.type}/${asset.fileName}`, assetRes.data);
-                } catch (err) {}
-            }));
+        for (const asset of assets) {
+            try {
+                const res = await axios.get(asset.url, { responseType: 'arraybuffer', timeout: 5000 });
+                zip.file(asset.path, res.data);
+            } catch (err) {}
         }
 
-        const content = await zip.generateAsync({ 
-            type: "nodebuffer",
-            compression: "DEFLATE",
-            compressionOptions: { level: 6 }
-        });
-        
+        const content = await zip.generateAsync({ type: "nodebuffer" });
         res.setHeader('Content-Type', 'application/zip');
         res.setHeader('Content-Disposition', `attachment; filename="${zipName}"`);
         res.send(content);
-
     } catch (error) {
-        console.error('Extraction Error:', error);
-        res.status(500).json({ error: 'Extraction failed.', details: error.message });
+        res.status(500).json({ error: 'Server-side extraction failed.' });
     }
 });
 

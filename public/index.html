@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Web2Zip | Cyber Protocol</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
     <style>
         body {
@@ -74,17 +75,12 @@
             border: 1px dashed #7000ff;
             font-size: 10px;
         }
-        
-        .code-snippet {
-            color: #7000ff;
-            word-break: break-all;
-        }
     </style>
 </head>
 <body>
 
     <div class="anime-border bg-[#16161e] w-full max-w-lg p-8 relative">
-        <div class="absolute top-2 right-4 text-[10px] opacity-50">VER 2.0.4 // SYSTEM_READY</div>
+        <div class="absolute top-2 right-4 text-[10px] opacity-50">VER 3.0.0 // HYBRID_CORE</div>
         
         <div class="mb-8">
             <h1 class="text-4xl font-black glitch-text tracking-tighter">
@@ -104,8 +100,8 @@
             <!-- Advanced Mode Toggle -->
             <div class="flex items-center justify-between p-4 bg-black/40 border border-purple-900/30 rounded">
                 <div>
-                    <p class="text-[11px] font-bold text-white">ADVANCED_SHIELD_BYPASS</p>
-                    <p class="text-[9px] text-gray-500 italic">Use browser-rendering for Cloudflare/React sites.</p>
+                    <p class="text-[11px] font-bold text-white">ADVANCED_USER_RENDERING</p>
+                    <p class="text-[9px] text-gray-500 italic">Render React/Cloudflare sites in YOUR browser (0% Crash).</p>
                 </div>
                 <label class="relative inline-flex items-center cursor-pointer">
                     <input type="checkbox" id="advancedMode" class="sr-only peer">
@@ -118,22 +114,10 @@
             </button>
         </div>
 
-        <div class="mt-6 api-panel p-3">
-            <p class="text-[9px] text-[#00ff88] mb-1 font-bold uppercase tracking-widest">// Developer API Access</p>
-            <div class="flex items-center gap-2">
-                <span class="bg-[#7000ff] text-white px-1 text-[8px]">GET</span>
-                <code class="code-snippet" id="apiLink">loading_endpoint...</code>
-            </div>
-            <p class="text-[8px] text-gray-500 mt-1 italic">* Use URL parameter to fetch direct ZIP assets.</p>
-        </div>
-
         <div id="sysLog" class="mt-8 status-box p-4 hidden">
-            <div class="text-[11px] space-y-1">
+            <div class="text-[11px] space-y-1" id="logContent">
                 <p>> Initializing Scraper...</p>
                 <p id="modeLog">> Protocol: Simple (Axios Engine)</p>
-                <p>> Target URL Authenticated...</p>
-                <p class="text-white">> Bypassing Web-Shields...</p>
-                <p class="animate-pulse">> Downloading Assets...</p>
             </div>
         </div>
 
@@ -146,31 +130,124 @@
         </div>
     </div>
 
-    <script>
-   
-        document.getElementById('apiLink').innerText = window.location.origin + '/api/convert?url={TARGET_URL}&mode=advanced';
+    <!-- Hidden Rendering Chamber -->
+    <iframe id="renderFrame" style="display:none;"></iframe>
 
-        function runScraper() {
+    <script>
+        const log = (msg, color = "#00ff88") => {
+            const p = document.createElement('p');
+            p.style.color = color;
+            p.innerText = `> ${msg}`;
+            document.getElementById('logContent').appendChild(p);
+        };
+
+        async function runScraper() {
             const url = document.getElementById('urlInput').value;
             const isAdvanced = document.getElementById('advancedMode').checked;
-            
             if (!url || url === 'https://') return alert('ERROR: URL_REQUIRED');
 
             document.getElementById('sysLog').classList.remove('hidden');
-            document.getElementById('modeLog').innerText = isAdvanced ? "> Protocol: Advanced (JSDOM Engine)" : "> Protocol: Simple (Axios Engine)";
+            document.getElementById('logContent').innerHTML = "";
+            log("Initializing Protocol...");
             
             const btn = document.getElementById('runBtn');
-            btn.innerText = "EXTRACTING...";
-            btn.style.opacity = "0.5";
+            btn.innerText = "RUNNING...";
+            btn.disabled = true;
 
-            // Download request with mode
-            const mode = isAdvanced ? 'advanced' : 'simple';
-            window.location.href = `/api/convert?url=${encodeURIComponent(url)}&mode=${mode}`;
-            
-            setTimeout(() => {
-                btn.innerText = "Execute Extraction";
-                btn.style.opacity = "1";
-            }, 60000);
+            if (isAdvanced) {
+                await executeUserSideExtraction(url);
+            } else {
+                log("Executing Server-Side Scrape...");
+                window.location.href = `/api/convert?url=${encodeURIComponent(url)}`;
+                setTimeout(() => {
+                    btn.innerText = "Execute Extraction";
+                    btn.disabled = false;
+                }, 5000);
+            }
+        }
+
+        async function executeUserSideExtraction(targetUrl) {
+            try {
+                log("Engaging User-Side Rendering Engine...", "#7000ff");
+                const zip = new JSZip();
+                
+                log("Fetching Raw Code via Proxy...");
+                const proxyUrl = `/api/proxy?url=${encodeURIComponent(targetUrl)}`;
+                const response = await fetch(proxyUrl);
+                const html = await response.text();
+
+                log("Building Render Chamber (Executing JS)...", "#7000ff");
+                const frame = document.getElementById('renderFrame');
+                const frameDoc = frame.contentDocument || frame.contentWindow.document;
+                
+                // Inject the HTML into the frame to let the user's browser run the scripts
+                frameDoc.open();
+                frameDoc.write(html);
+                frameDoc.close();
+
+                log("Waiting for React Hydration (5s)...");
+                await new Promise(r => setTimeout(r, 5000));
+
+                log("Capturing Rendered DOM...");
+                const renderedHtml = frameDoc.documentElement.outerHTML;
+                
+                log("Extracting Asset Map...");
+                const tempDiv = document.createElement('div');
+                tempDiv.innerHTML = renderedHtml;
+                const assets = [];
+                
+                const process = (selector, attr, folder) => {
+                    tempDiv.querySelectorAll(selector).forEach((el, i) => {
+                        const src = el.getAttribute(attr);
+                        if (src && !src.startsWith('data:')) {
+                            const absUrl = new URL(src, targetUrl).href;
+                            const fileName = `file-${i}.${folder}`;
+                            assets.push({ url: absUrl, path: `${folder}/${fileName}` });
+                            el.setAttribute(attr, `./${folder}/${fileName}`);
+                        }
+                    });
+                };
+
+                process('link[rel="stylesheet"]', 'href', 'css');
+                process('script[src]', 'src', 'js');
+                process('img', 'src', 'img');
+
+                zip.file("index.html", tempDiv.innerHTML);
+
+                log(`Downloading Assets (Count: ${assets.length})...`);
+                for (const asset of assets) {
+                    try {
+                        const res = await fetch(`/api/proxy?url=${encodeURIComponent(asset.url)}`);
+                        const blob = await res.blob();
+                        zip.file(asset.path, blob);
+                    } catch (e) {
+                        log(`Asset Failed: ${asset.path}`, "red");
+                    }
+                }
+
+                log("Generating Final ZIP Package...", "#00ff88");
+                const content = await zip.generateAsync({ type: "blob" });
+                const zipName = new URL(targetUrl).hostname.replace(/\./g, '_') + "_advanced.zip";
+                
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(content);
+                link.download = zipName;
+                link.click();
+
+                log("EXTRACTION COMPLETE!", "#00ff88");
+                const btn = document.getElementById('runBtn');
+                btn.innerText = "SUCCESS";
+                setTimeout(() => {
+                    btn.innerText = "Execute Extraction";
+                    btn.disabled = false;
+                }, 3000);
+
+            } catch (err) {
+                log(`CRITICAL ERROR: ${err.message}`, "red");
+                const btn = document.getElementById('runBtn');
+                btn.innerText = "RETRY";
+                btn.disabled = false;
+            }
         }
     </script>
 </body>
