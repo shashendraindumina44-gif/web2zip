@@ -101,6 +101,18 @@
                     placeholder="HTTP://SOURCE_LINK.COM" value="https://">
             </div>
 
+            <!-- Advanced Mode Toggle -->
+            <div class="flex items-center justify-between p-4 bg-black/40 border border-purple-900/30 rounded">
+                <div>
+                    <p class="text-[11px] font-bold text-white">ADVANCED_SHIELD_BYPASS</p>
+                    <p class="text-[9px] text-gray-500 italic">Use browser-rendering for Cloudflare/React sites.</p>
+                </div>
+                <label class="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" id="advancedMode" class="sr-only peer">
+                    <div class="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#7000ff] shadow-[0_0_10px_rgba(112,0,255,0.4)]"></div>
+                </label>
+            </div>
+
             <button onclick="runScraper()" id="runBtn" class="btn-execute w-full p-5 italic">
                 Execute Extraction
             </button>
@@ -118,9 +130,10 @@
         <div id="sysLog" class="mt-8 status-box p-4 hidden">
             <div class="text-[11px] space-y-1">
                 <p>> Initializing Scraper...</p>
+                <p id="modeLog">> Protocol: Simple (Axios Engine)</p>
                 <p>> Target URL Authenticated...</p>
                 <p class="text-white">> Bypassing Web-Shields...</p>
-                <p class="animate-pulse">> Downloading Assets (Time Limit: 10s)...</p>
+                <p class="animate-pulse">> Downloading Assets...</p>
             </div>
         </div>
 
@@ -135,24 +148,29 @@
 
     <script>
    
-        document.getElementById('apiLink').innerText = window.location.origin + '/api/convert?url={TARGET_URL}';
+        document.getElementById('apiLink').innerText = window.location.origin + '/api/convert?url={TARGET_URL}&mode=advanced';
 
         function runScraper() {
             const url = document.getElementById('urlInput').value;
+            const isAdvanced = document.getElementById('advancedMode').checked;
+            
             if (!url || url === 'https://') return alert('ERROR: URL_REQUIRED');
 
             document.getElementById('sysLog').classList.remove('hidden');
+            document.getElementById('modeLog').innerText = isAdvanced ? "> Protocol: Advanced (Puppeteer Engine)" : "> Protocol: Simple (Axios Engine)";
+            
             const btn = document.getElementById('runBtn');
             btn.innerText = "EXTRACTING...";
             btn.style.opacity = "0.5";
 
-            // Download request
-            window.location.href = `/api/convert?url=${encodeURIComponent(url)}`;
+            // Download request with mode
+            const mode = isAdvanced ? 'advanced' : 'simple';
+            window.location.href = `/api/convert?url=${encodeURIComponent(url)}&mode=${mode}`;
             
             setTimeout(() => {
                 btn.innerText = "Execute Extraction";
                 btn.style.opacity = "1";
-            }, 10000);
+            }, 60000);
         }
     </script>
 </body>

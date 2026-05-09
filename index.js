@@ -3,6 +3,12 @@ const axios = require('axios');
 const cheerio = require('cheerio');
 const JSZip = require('jszip');
 const path = require('path');
+const puppeteer = require('puppeteer-extra');
+const StealthPlugin = require('puppeteer-extra-plugin-stealth');
+const chromium = require('@sparticuz/chromium');
+
+// Initialize Stealth Plugin
+puppeteer.use(StealthPlugin());
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -13,34 +19,59 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
+// Helper to launch browser (Optimized for Vercel)
+async function launchBrowser() {
+    return await puppeteer.launch({
+        args: [...chromium.args, '--no-sandbox', '--disable-setuid-sandbox'],
+        defaultViewport: chromium.defaultViewport,
+        executablePath: await chromium.executablePath(),
+        headless: chromium.headless,
+    });
+}
+// conver api path
 app.get('/api/convert', async (req, res) => {
     let targetUrl = req.query.url;
+    const mode = req.query.mode || 'simple'; // 'simple' or 'advanced'
+
     if (!targetUrl) return res.status(400).json({ error: 'URL MISSED!' });
     if (!targetUrl.startsWith('http')) targetUrl = 'https://' + targetUrl;
+// zip converter
+    const zip = new JSZip();
+    const urlObj = new URL(targetUrl);
+    const zipName = urlObj.hostname.replace('www.', '').replace(/\./g, '_') + '.zip';
+    const assets = [];
+    let htmlContent = '';
+    let cookieString = '';
+    const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36';
 
+    let browser;
+    // modes selction
     try {
-        const response = await axios.get(targetUrl, { 
-            headers: { 
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-                'Accept-Language': 'en-US,en;q=0.9'
-            },
-            timeout: 10000 
-        });
+        if (mode === 'advanced') {
+            // ADVANCED MODE (PUPPETEER)
+            browser = await launchBrowser();
+            const page = await browser.newPage();
+            await page.setUserAgent(userAgent);
+            await page.goto(targetUrl, { waitUntil: 'networkidle2', timeout: 60000 });
+            await new Promise(resolve => setTimeout(resolve, 3000));
+            htmlContent = await page.content();
+            const cookies = await page.cookies();
+            cookieString = cookies.map(c => `${c.name}=${c.value}`).join('; ');
+        } else {
+            //SIMPLE MODE (AXIOS)
+            const response = await axios.get(targetUrl, { 
+                headers: { 'User-Agent': userAgent },
+                timeout: 15000 
+            });
+            htmlContent = response.data;
+        }
 
-        const $ = cheerio.load(response.data);
-        const zip = new JSZip();
-        const urlObj = new URL(targetUrl);
-        
-        // --- ZIP NAME CONFIG (CLEAN) ---
-        // "_extracted" kalla ain kara. Dan enne (domain_name.zip) widiyata.
-        const zipName = urlObj.hostname.replace('www.', '').replace(/\./g, '_') + '.zip';
-        
-        const assets = [];
+        const $ = cheerio.load(htmlContent);
 
-        // 🛡️ SECURITY & CLEANUP
+        //  SECURITY & CLEANUP
         $('base').remove(); 
         $('script[src*="google-analytics"]').remove(); 
+        $('script[src*="gtm.js"]').remove();
 
         const processAsset = (tag, attr, typeFolder) => {
             $(tag).each((i, el) => {
@@ -50,24 +81,20 @@ app.get('/api/convert', async (req, res) => {
                         const assetUrl = new URL(src, targetUrl).href;
                         let cleanPath = new URL(assetUrl).pathname;
                         let fileName = path.basename(cleanPath);
-                        
                         if (!fileName || !fileName.includes('.')) {
                             const extensions = { js: '.js', css: '.css', img: '.png', icon: '.ico', media: '.mp4' };
                             fileName = `${typeFolder}-${i}${extensions[typeFolder] || '.file'}`;
                         } else {
                             fileName = fileName.replace(/[^a-zA-Z0-9.\-_]/g, '_');
                         }
-
                         assets.push({ type: typeFolder, url: assetUrl, fileName });
-                        
-                        // HTML eka athule relative path eka hadima
                         $(el).attr(attr, `./${typeFolder}/${fileName}`); 
                     } catch (e) {}
                 }
             });
         };
 
-        // Assets extraction mapping
+        // resources to include in zip
         processAsset('link[rel="stylesheet"]', 'href', 'css');
         processAsset('script[src]', 'src', 'js');
         processAsset('img', 'src', 'img');
@@ -75,10 +102,9 @@ app.get('/api/convert', async (req, res) => {
         processAsset('audio source', 'src', 'audio');
         processAsset('video source', 'src', 'video');
 
-        // Save updated HTML to ZIP
         zip.file("index.html", $.html());
 
-        // ⚡ BATCH DOWNLOADER
+        // ASSET DOWNLOADER
         const batchSize = 5; 
         for (let i = 0; i < assets.length; i += batchSize) {
             const batch = assets.slice(i, i + batchSize);
@@ -86,16 +112,15 @@ app.get('/api/convert', async (req, res) => {
                 try {
                     const assetRes = await axios.get(asset.url, { 
                         responseType: 'arraybuffer', 
-                        timeout: 5000, 
+                        timeout: 10000, 
                         headers: { 
-                            'User-Agent': 'Mozilla/5.0',
-                            'Referer': targetUrl
+                            'User-Agent': userAgent,
+                            'Referer': targetUrl,
+                            'Cookie': cookieString
                         }
                     });
                     zip.file(`${asset.type}/${asset.fileName}`, assetRes.data);
-                } catch (err) {
-                    // Fail wena ewa skip wenawa
-                }
+                } catch (err) {}
             }));
         }
 
@@ -110,10 +135,10 @@ app.get('/api/convert', async (req, res) => {
         res.send(content);
 
     } catch (error) {
-        res.status(500).json({ 
-            error: 'Extraction failed.', 
-            details: error.message 
-        });
+        console.error('Extraction Error:', error);
+        res.status(500).json({ error: 'Extraction failed.', details: error.message });
+    } finally {
+        if (browser) await browser.close();
     }
 });
 
@@ -122,3 +147,5 @@ module.exports = app;
 if (process.env.NODE_ENV !== 'production') {
     app.listen(PORT, () => console.log(`[Lord Indumina Protocol] Online on Port: ${PORT}`));
 }
+
+
