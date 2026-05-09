@@ -157,7 +157,7 @@
             if (!url || url === 'https://') return alert('ERROR: URL_REQUIRED');
 
             document.getElementById('sysLog').classList.remove('hidden');
-            document.getElementById('modeLog').innerText = isAdvanced ? "> Protocol: Advanced (Puppeteer Engine)" : "> Protocol: Simple (Axios Engine)";
+            document.getElementById('modeLog').innerText = isAdvanced ? "> Protocol: Advanced (JSDOM Engine)" : "> Protocol: Simple (Axios Engine)";
             
             const btn = document.getElementById('runBtn');
             btn.innerText = "EXTRACTING...";

@@ -3,8 +3,7 @@ const axios = require('axios');
 const cheerio = require('cheerio');
 const JSZip = require('jszip');
 const path = require('path');
-const { chromium: playwright } = require('playwright-core');
-const chromium = require('@sparticuz/chromium-min');
+const { JSDOM, VirtualConsole } = require('jsdom');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -15,20 +14,27 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// Helper to launch browser (STRICTLY FOR VERCEL with Chromium-Min)
-async function launchBrowser() {
-    return await playwright.launch({
-        args: [
-            ...chromium.args,
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--disable-gpu',
-            '--disable-blink-features=AutomationControlled'
-        ],
-        executablePath: await chromium.executablePath(),
-        headless: true,
+/**
+ * 🛠️ OUR OWN RENDERING ENGINE (JSDOM)
+ * Zero-Binary, Pure JavaScript implementation for Vercel compatibility.
+ * Executes JavaScript and builds React components without Chromium.
+ */
+async function buildWebContent(url, rawHtml) {
+    const virtualConsole = new VirtualConsole();
+    const dom = new JSDOM(rawHtml, {
+        url: url,
+        runScripts: "dangerously",
+        resources: "usable",
+        pretendToBeVisual: true,
+        virtualConsole
     });
+
+    // Wait for React hydration and script execution
+    await new Promise(resolve => setTimeout(resolve, 4000));
+
+    const renderedHtml = dom.serialize();
+    dom.window.close(); // Cleanup
+    return renderedHtml;
 }
 
 app.get('/api/convert', async (req, res) => {
@@ -43,43 +49,19 @@ app.get('/api/convert', async (req, res) => {
     const zipName = urlObj.hostname.replace('www.', '').replace(/\./g, '_') + '.zip';
     const assets = [];
     let htmlContent = '';
-    let cookieString = '';
     const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
 
-    let browser;
     try {
-        if (mode === 'advanced') {
-            // --- ADVANCED MODE (PLAYWRIGHT + LISTENERS) ---
-            browser = await launchBrowser();
-            const context = await browser.newContext({ userAgent });
-            const page = await context.newPage();
-            
-            // Smart Listeners
-            page.on('console', msg => console.log(`[Browser Log]: ${msg.text()}`));
-            
-            // Go to URL and wait for the most stable network state
-            await page.goto(targetUrl, { 
-                waitUntil: 'networkidle', 
-                timeout: 60000 
-            });
-            
-            // Wait for React Hydration / Dynamic Content
-            await page.waitForLoadState('domcontentloaded');
-            await page.waitForLoadState('load');
-            
-            // Final chunk listener wait
-            await new Promise(resolve => setTimeout(resolve, 5000));
+        // --- 1. FETCH RAW CONTENT ---
+        const response = await axios.get(targetUrl, { 
+            headers: { 'User-Agent': userAgent },
+            timeout: 20000 
+        });
+        htmlContent = response.data;
 
-            htmlContent = await page.content();
-            const cookies = await context.cookies();
-            cookieString = cookies.map(c => `${c.name}=${c.value}`).join('; ');
-        } else {
-            // --- SIMPLE MODE (AXIOS) ---
-            const response = await axios.get(targetUrl, { 
-                headers: { 'User-Agent': userAgent },
-                timeout: 15000 
-            });
-            htmlContent = response.data;
+        // --- 2. ADVANCED MODE (RUN JS & BUILD WEB) ---
+        if (mode === 'advanced') {
+            htmlContent = await buildWebContent(targetUrl, htmlContent);
         }
 
         const $ = cheerio.load(htmlContent);
@@ -128,11 +110,7 @@ app.get('/api/convert', async (req, res) => {
                     const assetRes = await axios.get(asset.url, { 
                         responseType: 'arraybuffer', 
                         timeout: 10000, 
-                        headers: { 
-                            'User-Agent': userAgent,
-                            'Referer': targetUrl,
-                            'Cookie': cookieString
-                        }
+                        headers: { 'User-Agent': userAgent, 'Referer': targetUrl }
                     });
                     zip.file(`${asset.type}/${asset.fileName}`, assetRes.data);
                 } catch (err) {}
@@ -152,13 +130,11 @@ app.get('/api/convert', async (req, res) => {
     } catch (error) {
         console.error('Extraction Error:', error);
         res.status(500).json({ error: 'Extraction failed.', details: error.message });
-    } finally {
-        if (browser) await browser.close();
     }
 });
 
 module.exports = app;
 
 if (process.env.NODE_ENV !== 'production') {
-    app.listen(PORT, () => console.log(`[shashendraindumina44-gif Protocol] Online on Port: ${PORT}`));
+    app.listen(PORT, () => console.log(`[ Lord Indumina Protocol] Online on Port: ${PORT}`));
 }
