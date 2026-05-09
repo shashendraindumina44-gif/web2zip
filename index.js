@@ -15,20 +15,35 @@ app.get('/', (req, res) => {
 });
 
 /**
- * 🕵️ STEALTH HEADERS
- * Optimized to mimic a real browser to bypass basic Cloudflare checks.
+ * 🕵️ STEALTH PROXY (Advanced Mode Support)
+ * Allows the user's browser to fetch content without CORS blocks.
  */
-const getStealthHeaders = () => ({
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-    'Accept-Language': 'en-US,en;q=0.9',
-    'Sec-Fetch-Dest': 'document',
-    'Sec-Fetch-Mode': 'navigate',
-    'Sec-Fetch-Site': 'none',
-    'Sec-Fetch-User': '?1',
-    'Upgrade-Insecure-Requests': '1'
+app.get('/api/proxy', async (req, res) => {
+    const targetUrl = req.query.url;
+    if (!targetUrl) return res.status(400).send('URL missing');
+    
+    try {
+        const response = await axios.get(targetUrl, {
+            responseType: 'arraybuffer',
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+                'Accept': '*/*',
+            },
+            timeout: 15000,
+            validateStatus: () => true
+        });
+        
+        res.setHeader('Content-Type', response.headers['content-type'] || 'application/octet-stream');
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.status(response.status).send(response.data);
+    } catch (error) {
+        res.status(500).send(`Proxy Error: ${error.message}`);
+    }
 });
 
+/**
+ * ⚡ SIMPLE MODE (Server-Side)
+ */
 app.get('/api/convert', async (req, res) => {
     let targetUrl = req.query.url;
     if (!targetUrl) return res.status(400).json({ error: 'URL MISSED!' });
@@ -38,18 +53,16 @@ app.get('/api/convert', async (req, res) => {
     const urlObj = new URL(targetUrl);
     const zipName = urlObj.hostname.replace('www.', '').replace(/\./g, '_') + '.zip';
     const assets = [];
+    const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
 
     try {
-        // --- 1. FETCH CONTENT ---
         const response = await axios.get(targetUrl, { 
-            headers: getStealthHeaders(),
+            headers: { 'User-Agent': userAgent },
             timeout: 15000 
         });
-        
-        let htmlContent = response.data;
+        const htmlContent = response.data;
         const $ = cheerio.load(htmlContent);
 
-        // --- 2. ASSET DISCOVERY ---
         $('base').remove();
         const processAsset = (tag, attr, folder) => {
             $(tag).each((i, el) => {
@@ -57,7 +70,7 @@ app.get('/api/convert', async (req, res) => {
                 if (src && !src.startsWith('data:') && !src.startsWith('#')) {
                     try {
                         const assetUrl = new URL(src, targetUrl).href;
-                        const fileName = `asset-${i}-${Math.random().toString(36).substring(5)}.${folder}`;
+                        const fileName = `file-${i}.${folder}`;
                         assets.push({ url: assetUrl, path: `${folder}/${fileName}` });
                         $(el).attr(attr, `./${folder}/${fileName}`);
                     } catch (e) {}
@@ -69,45 +82,21 @@ app.get('/api/convert', async (req, res) => {
         processAsset('script[src]', 'src', 'js');
         processAsset('img', 'src', 'img');
 
-        // --- 3. REACT DATA PATTERN MATCHING ---
-        // Try to find __NEXT_DATA__ or other hydration scripts for React/NextJS
-        const nextData = $('script#__NEXT_DATA__').html();
-        if (nextData) {
-            zip.file("react_hydration_data.json", nextData);
-        }
-
         zip.file("index.html", $.html());
 
-        // --- 4. BATCH DOWNLOAD ASSETS ---
-        const downloadBatch = async (batch) => {
-            await Promise.all(batch.map(async (asset) => {
-                try {
-                    const res = await axios.get(asset.url, { 
-                        responseType: 'arraybuffer', 
-                        timeout: 5000,
-                        headers: getStealthHeaders()
-                    });
-                    zip.file(asset.path, res.data);
-                } catch (err) {}
-            }));
-        };
-
-        for (let i = 0; i < assets.length; i += 5) {
-            await downloadBatch(assets.slice(i, i + 5));
+        for (const asset of assets) {
+            try {
+                const res = await axios.get(asset.url, { responseType: 'arraybuffer', timeout: 5000, headers: { 'User-Agent': userAgent } });
+                zip.file(asset.path, res.data);
+            } catch (err) {}
         }
 
-        // --- 5. PACKAGE & SEND ---
         const content = await zip.generateAsync({ type: "nodebuffer" });
         res.setHeader('Content-Type', 'application/zip');
         res.setHeader('Content-Disposition', `attachment; filename="${zipName}"`);
         res.send(content);
-
     } catch (error) {
-        console.error('Extraction Error:', error.message);
-        res.status(500).json({ 
-            error: 'Pure-Protocol extraction failed.', 
-            details: error.response ? `Status ${error.response.status}` : error.message 
-        });
+        res.status(500).json({ error: 'Server extraction failed.', details: error.message });
     }
 });
 
