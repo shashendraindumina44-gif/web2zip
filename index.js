@@ -18,9 +18,16 @@ app.get('/', (req, res) => {
 // Helper to launch browser (Optimized for Vercel with Playwright)
 async function launchBrowser() {
     return await playwright.launch({
-        args: [...chromium.args, '--no-sandbox', '--disable-setuid-sandbox', '--disable-blink-features=AutomationControlled'],
+        args: [
+            ...chromium.args,
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-gpu',
+            '--disable-blink-features=AutomationControlled'
+        ],
         executablePath: await chromium.executablePath(),
-        headless: true, // Use boolean for Playwright
+        headless: true,
     });
 }
 
@@ -37,7 +44,7 @@ app.get('/api/convert', async (req, res) => {
     const assets = [];
     let htmlContent = '';
     let cookieString = '';
-    const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36';
+    const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
 
     let browser;
     try {
@@ -51,7 +58,7 @@ app.get('/api/convert', async (req, res) => {
             await page.goto(targetUrl, { waitUntil: 'networkidle', timeout: 60000 });
             
             // Extra wait for React hydration
-            await page.waitForTimeout(3000); 
+            await new Promise(resolve => setTimeout(resolve, 3000));
 
             htmlContent = await page.content();
             const cookies = await context.cookies();
@@ -143,5 +150,5 @@ app.get('/api/convert', async (req, res) => {
 module.exports = app;
 
 if (process.env.NODE_ENV !== 'production') {
-    app.listen(PORT, () => console.log(`[shashendraindumina44-gif Protocol] Online on Port: ${PORT}`));
+    app.listen(PORT, () => console.log(`[Lord Indumina Protocol] Online on Port: ${PORT}`));
 }
