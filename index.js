@@ -72,7 +72,12 @@ app.get('/api/convert', async (req, res) => {
                         const assetUrl = new URL(src, targetUrl).href;
                         const fileName = `file-${i}.${folder}`;
                         assets.push({ url: assetUrl, path: `${folder}/${fileName}` });
+                        
+                        // Set Local Path for PC (Extracted ZIP)
                         $(el).attr(attr, `./${folder}/${fileName}`);
+                        
+                        // 🔥 MAGIC TRICK: Fallback to Original URL for Mobile (ZIP Preview without extract)
+                        $(el).attr('onerror', `this.onerror=null; this.${attr}='${assetUrl}';`);
                     } catch (e) {}
                 }
             });
