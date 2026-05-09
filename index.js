@@ -15,8 +15,7 @@ app.get('/', (req, res) => {
 });
 
 /**
- * 🕵️ STEALTH PROXY (Advanced Mode Support)
- * Allows the user's browser to fetch content without CORS blocks.
+ * 🕵️ STEALTH PROXY
  */
 app.get('/api/proxy', async (req, res) => {
     const targetUrl = req.query.url;
@@ -42,12 +41,15 @@ app.get('/api/proxy', async (req, res) => {
 });
 
 /**
- * ⚡ SIMPLE MODE (Server-Side)
+ * ⚡ SIMPLE MODE (PC & MOBILE COMPATIBLE)
  */
 app.get('/api/convert', async (req, res) => {
     let targetUrl = req.query.url;
     if (!targetUrl) return res.status(400).json({ error: 'URL MISSED!' });
     if (!targetUrl.startsWith('http')) targetUrl = 'https://' + targetUrl;
+
+    const userAgentStr = req.headers['user-agent'] || '';
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(userAgentStr);
 
     const zip = new JSZip();
     const urlObj = new URL(targetUrl);
@@ -64,28 +66,42 @@ app.get('/api/convert', async (req, res) => {
         const $ = cheerio.load(htmlContent);
 
         $('base').remove();
-        const processAsset = (tag, attr, folder) => {
-            $(tag).each((i, el) => {
+
+        const processAsset = async (tag, attr, folder) => {
+            const elements = $(tag);
+            for (let i = 0; i < elements.length; i++) {
+                const el = elements[i];
                 let src = $(el).attr(attr);
                 if (src && !src.startsWith('data:') && !src.startsWith('#')) {
                     try {
                         const assetUrl = new URL(src, targetUrl).href;
                         const fileName = `file-${i}.${folder}`;
-                        assets.push({ url: assetUrl, path: `${folder}/${fileName}` });
                         
-                        // Set Local Path for PC (Extracted ZIP)
-                        $(el).attr(attr, `./${folder}/${fileName}`);
-                        
-                        // 🔥 MAGIC TRICK: Fallback to Original URL for Mobile (ZIP Preview without extract)
-                        $(el).attr('onerror', `this.onerror=null; this.${attr}='${assetUrl}';`);
+                        if (isMobile && (folder === 'css' || folder === 'js')) {
+                            // 📱 MOBILE: Inline everything for easy access
+                            const assetRes = await axios.get(assetUrl, { timeout: 5000, headers: { 'User-Agent': userAgent } });
+                            if (folder === 'css') {
+                                $('head').append(`<style>${assetRes.data}</style>`);
+                            } else {
+                                $('body').append(`<script>${assetRes.data}</script>`);
+                            }
+                            $(el).remove();
+                        } else {
+                            // 💻 PC: Normal Folder Structure
+                            assets.push({ url: assetUrl, path: `${folder}/${fileName}` });
+                            $(el).attr(attr, `./${folder}/${fileName}`);
+                        }
                     } catch (e) {}
                 }
-            });
+            }
         };
 
-        processAsset('link[rel="stylesheet"]', 'href', 'css');
-        processAsset('script[src]', 'src', 'js');
-        processAsset('img', 'src', 'img');
+        await processAsset('link[rel="stylesheet"]', 'href', 'css');
+        await processAsset('script[src]', 'src', 'js');
+        await processAsset('img', 'src', 'img');
+
+        // Mobile වලදී images පේන්න original site එක base එක විදිහට දානවා
+        if (isMobile) $('head').prepend(`<base href="${targetUrl}">`);
 
         zip.file("index.html", $.html());
 
