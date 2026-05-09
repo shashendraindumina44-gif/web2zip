@@ -14,26 +14,20 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-/**
- * 🛠️ OUR OWN RENDERING ENGINE (JSDOM)
- * Zero-Binary, Pure JavaScript implementation for Vercel compatibility.
- * Executes JavaScript and builds React components without Chromium.
- */
 async function buildWebContent(url, rawHtml) {
     const virtualConsole = new VirtualConsole();
     const dom = new JSDOM(rawHtml, {
         url: url,
         runScripts: "dangerously",
-        resources: "usable",
         pretendToBeVisual: true,
         virtualConsole
     });
 
-    // Wait for React hydration and script execution
-    await new Promise(resolve => setTimeout(resolve, 4000));
+    // Smart Hydration Wait (Reduced to save Vercel execution time)
+    await new Promise(resolve => setTimeout(resolve, 2000));
 
     const renderedHtml = dom.serialize();
-    dom.window.close(); // Cleanup
+    dom.window.close(); 
     return renderedHtml;
 }
 
@@ -136,5 +130,5 @@ app.get('/api/convert', async (req, res) => {
 module.exports = app;
 
 if (process.env.NODE_ENV !== 'production') {
-    app.listen(PORT, () => console.log(`[ Lord Indumina Protocol] Online on Port: ${PORT}`));
+    app.listen(PORT, () => console.log(`[Lord Indumina Protocol] Online on Port: ${PORT}`));
 }
