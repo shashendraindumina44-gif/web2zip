@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Web2Zip | Cyber Protocol</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
     <style>
         body {
@@ -73,7 +74,7 @@
 <body>
 
     <div class="anime-border bg-[#16161e] w-full max-w-lg p-8 relative">
-        <div class="absolute top-2 right-4 text-[10px] opacity-50">VER 5.0.0 // PURE_STEALTH</div>
+        <div class="absolute top-2 right-4 text-[10px] opacity-50">VER 5.1.0 // HYBRID_RESTORED</div>
         
         <div class="mb-8">
             <h1 class="text-4xl font-black glitch-text tracking-tighter">
@@ -90,9 +91,15 @@
                     placeholder="HTTP://SOURCE_LINK.COM" value="https://">
             </div>
 
-            <div class="p-4 bg-black/40 border border-purple-900/30 rounded">
-                <p class="text-[11px] font-bold text-white uppercase tracking-widest">Binary-Free Scrape Mode</p>
-                <p class="text-[9px] text-gray-500 italic mt-1">Optimized for Vercel. Zero crashes. 100% stable extraction.</p>
+            <div class="flex items-center justify-between p-4 bg-black/40 border border-purple-900/30 rounded">
+                <div>
+                    <p class="text-[11px] font-bold text-white uppercase tracking-widest">Advanced Mode</p>
+                    <p class="text-[9px] text-gray-500 italic">Automated User-Side Rendering (Bypasses 403/React).</p>
+                </div>
+                <label class="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" id="advancedMode" class="sr-only peer">
+                    <div class="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#7000ff] shadow-[0_0_10px_rgba(112,0,255,0.4)]"></div>
+                </label>
             </div>
 
             <button onclick="runScraper()" id="runBtn" class="btn-execute w-full p-5 italic">
@@ -103,8 +110,6 @@
         <div id="sysLog" class="mt-8 status-box p-4 hidden">
             <div class="text-[11px] space-y-1" id="logContent">
                 <p>> Initializing Scraper...</p>
-                <p>> Protocol: Pure Stealth (Axios Engine)</p>
-                <p>> Executing Extraction...</p>
             </div>
         </div>
 
@@ -117,23 +122,114 @@
         </div>
     </div>
 
+    <iframe id="renderFrame" style="display:none;"></iframe>
+
     <script>
-        function runScraper() {
+        const log = (msg, color = "#00ff88") => {
+            const p = document.createElement('p');
+            p.style.color = color;
+            p.innerText = `> ${msg}`;
+            const container = document.getElementById('logContent');
+            container.appendChild(p);
+            container.scrollTop = container.scrollHeight;
+        };
+
+        async function runScraper() {
             const url = document.getElementById('urlInput').value;
+            const isAdvanced = document.getElementById('advancedMode').checked;
             if (!url || url === 'https://') return alert('ERROR: URL_REQUIRED');
 
             document.getElementById('sysLog').classList.remove('hidden');
+            document.getElementById('logContent').innerHTML = "";
+            log("Initializing Protocol...");
             
             const btn = document.getElementById('runBtn');
-            btn.innerText = "EXTRACTING...";
+            btn.innerText = "RUNNING...";
             btn.disabled = true;
 
-            window.location.href = `/api/convert?url=${encodeURIComponent(url)}`;
-            
-            setTimeout(() => {
+            if (isAdvanced) {
+                await executeUserSideExtraction(url);
                 btn.innerText = "Execute Extraction";
                 btn.disabled = false;
-            }, 5000);
+            } else {
+                log("Executing Server-Side Scrape...");
+                window.location.href = `/api/convert?url=${encodeURIComponent(url)}`;
+                setTimeout(() => {
+                    btn.innerText = "Execute Extraction";
+                    btn.disabled = false;
+                }, 5000);
+            }
+        }
+
+        async function executeUserSideExtraction(targetUrl) {
+            try {
+                log("Engaging User-Side Rendering Engine...", "#7000ff");
+                const zip = new JSZip();
+                
+                log("Fetching Raw Code via Stealth Proxy...");
+                const proxyUrl = `/api/proxy?url=${encodeURIComponent(targetUrl)}`;
+                const response = await fetch(proxyUrl);
+                if (!response.ok) throw new Error("Server Blocked (403)");
+                const html = await response.text();
+
+                log("Injecting Render Chamber...");
+                const frame = document.getElementById('renderFrame');
+                const frameDoc = frame.contentDocument || frame.contentWindow.document;
+                frameDoc.open();
+                frameDoc.write(html);
+                frameDoc.close();
+
+                log("Waiting for React Hydration (8s)...");
+                await new Promise(r => setTimeout(r, 8000));
+
+                log("Capturing Hydrated DOM...");
+                const renderedDoc = frameDoc.cloneNode(true);
+                const assets = [];
+                
+                const process = (selector, attr, folder) => {
+                    renderedDoc.querySelectorAll(selector).forEach((el, i) => {
+                        const src = el.getAttribute(attr);
+                        if (src && !src.startsWith('data:') && !src.startsWith('#')) {
+                            try {
+                                const absUrl = new URL(src, targetUrl).href;
+                                const fileName = `file-${i}.${folder}`;
+                                assets.push({ url: absUrl, path: `${folder}/${fileName}` });
+                                el.setAttribute(attr, `./${folder}/${fileName}`);
+                            } catch (e) {}
+                        }
+                    });
+                };
+
+                process('link[rel="stylesheet"]', 'href', 'css');
+                process('script[src]', 'src', 'js');
+                process('img', 'src', 'img');
+
+                zip.file("index.html", renderedDoc.documentElement.outerHTML);
+
+                log(`Downloading Assets (${assets.length})...`);
+                for (const asset of assets) {
+                    try {
+                        const res = await fetch(`/api/proxy?url=${encodeURIComponent(asset.url)}`);
+                        if (res.ok) {
+                            const blob = await res.blob();
+                            zip.file(asset.path, blob);
+                        }
+                    } catch (e) {}
+                }
+
+                log("Packaging Final ZIP...", "#00ff88");
+                const content = await zip.generateAsync({ type: "blob" });
+                const zipName = new URL(targetUrl).hostname.replace(/\./g, '_') + "_advanced.zip";
+                
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(content);
+                link.download = zipName;
+                link.click();
+
+                log("COMPLETE!", "#00ff88");
+            } catch (err) {
+                log(`FAILED: ${err.message}`, "red");
+            }
         }
     </script>
 </body>
