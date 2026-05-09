@@ -4,12 +4,10 @@
   "author": "shashendraindumina44-gif",
   "main": "index.js",
   "dependencies": {
-    "@sparticuz/chromium": "131.0.1",
     "axios": "^1.4.0",
     "cheerio": "^1.0.0-rc.12",
     "express": "^4.18.2",
-    "jszip": "^3.10.1",
-    "playwright-core": "1.49.1"
+    "jszip": "^3.10.1"
   },
   "scripts": {
     "start": "node index.js"

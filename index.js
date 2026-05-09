@@ -3,8 +3,6 @@ const axios = require('axios');
 const cheerio = require('cheerio');
 const JSZip = require('jszip');
 const path = require('path');
-const { chromium: playwright } = require('playwright-core');
-const chromium = require('@sparticuz/chromium');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -15,20 +13,15 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// Helper to launch browser (Optimized for Vercel with Playwright)
-async function launchBrowser() {
-    return await playwright.launch({
-        args: [
-            ...chromium.args,
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--disable-gpu',
-            '--disable-blink-features=AutomationControlled'
-        ],
-        executablePath: await chromium.executablePath(),
-        headless: true,
-    });
+// Advanced Extraction via Microlink API (Zero-Binary, Vercel Optimized)
+async function fetchRenderedHtml(targetUrl) {
+    const microlinkUrl = `https://api.microlink.io?url=${encodeURIComponent(targetUrl)}&render=true&waitForTimeout=3000&headers.user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36`;
+    const response = await axios.get(microlinkUrl, { timeout: 45000 });
+    
+    if (response.data && response.data.status === 'success') {
+        return response.data.data.html;
+    }
+    throw new Error('Microlink failed to render the page.');
 }
 
 app.get('/api/convert', async (req, res) => {
@@ -43,26 +36,12 @@ app.get('/api/convert', async (req, res) => {
     const zipName = urlObj.hostname.replace('www.', '').replace(/\./g, '_') + '.zip';
     const assets = [];
     let htmlContent = '';
-    let cookieString = '';
     const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
 
-    let browser;
     try {
         if (mode === 'advanced') {
-            // --- ADVANCED MODE (PLAYWRIGHT) ---
-            browser = await launchBrowser();
-            const context = await browser.newContext({ userAgent });
-            const page = await context.newPage();
-            
-            // Go to URL and wait for network to settle
-            await page.goto(targetUrl, { waitUntil: 'networkidle', timeout: 60000 });
-            
-            // Extra wait for React hydration
-            await new Promise(resolve => setTimeout(resolve, 3000));
-
-            htmlContent = await page.content();
-            const cookies = await context.cookies();
-            cookieString = cookies.map(c => `${c.name}=${c.value}`).join('; ');
+            // --- ADVANCED MODE (MICROLINK API) ---
+            htmlContent = await fetchRenderedHtml(targetUrl);
         } else {
             // --- SIMPLE MODE (AXIOS) ---
             const response = await axios.get(targetUrl, { 
@@ -118,11 +97,7 @@ app.get('/api/convert', async (req, res) => {
                     const assetRes = await axios.get(asset.url, { 
                         responseType: 'arraybuffer', 
                         timeout: 10000, 
-                        headers: { 
-                            'User-Agent': userAgent,
-                            'Referer': targetUrl,
-                            'Cookie': cookieString
-                        }
+                        headers: { 'User-Agent': userAgent, 'Referer': targetUrl }
                     });
                     zip.file(`${asset.type}/${asset.fileName}`, assetRes.data);
                 } catch (err) {}
@@ -142,13 +117,11 @@ app.get('/api/convert', async (req, res) => {
     } catch (error) {
         console.error('Extraction Error:', error);
         res.status(500).json({ error: 'Extraction failed.', details: error.message });
-    } finally {
-        if (browser) await browser.close();
     }
 });
 
 module.exports = app;
 
 if (process.env.NODE_ENV !== 'production') {
-    app.listen(PORT, () => console.log(`[Lord Indumina Protocol] Online on Port: ${PORT}`));
+    app.listen(PORT, () => console.log(`[shashendraindumina44-gif Protocol] Online on Port: ${PORT}`));
 }

@@ -12,7 +12,7 @@
 **Web2Zip** is an advanced web-scraping utility designed by **Lord Indumina** to extract HTML, CSS, JavaScript, and media assets from any public URL and package them into a single, structured ZIP file. This protocol is optimized for **Vercel** serverless environments and features a dedicated API for seamless integration with automation scripts and bots.
 
 ## 🚀 KEY FEATURES
-- **Cloudflare Bypass:** Integrated with Playwright to navigate through bot-detection shields and Cloudflare verification.
+- **Cloudflare Bypass:** Integrated with Microlink API to navigate through bot-detection shields and Cloudflare verification without server-side browser overhead.
 - **ReactJS & SPA Support:** Uses full browser rendering to capture content from sites built with React, Vue, Angular, and other modern frameworks.
 - **Full Asset Extraction:** Automatically crawls and downloads linked CSS, Javascript, and Image files.
 - **Session Persistence:** Captures and reuses browser cookies to ensure asset downloads are not blocked by security protocols.
